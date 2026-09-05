@@ -1,13 +1,15 @@
-import threading
 import ollama
 import subprocess
 import time
 import socket
-from constants import ServerStatus, ModelStatus
+from constants import MODELS, ServerStatus, ModelStatus
+from logger import logger
+
+SERVER = "server"
 
 
 class OllamaServer:
-    def __init__(self, model: str = "qwen2.5-coder:14b"):
+    def __init__(self, model: str = MODELS[0]):
         self.model = model
         self.server_status = ServerStatus.NOT_RUNNING
         self.model_status = ModelStatus.NOT_LOADED
@@ -33,69 +35,65 @@ class OllamaServer:
     def start_server(self):
         """Start the Ollama server"""
         if self.is_server_running():
-            print("Ollama server is already running on localhost:11434")
+            logger.log("Ollama server is already running on localhost:11434", SERVER)
             self.server_status = ServerStatus.RUNNING
-            return
-        
+            return True
         try:
             self.server_status = ServerStatus.STARTING
-            print("Starting Ollama server...")
+            logger.log("Starting Ollama server...", SERVER)
             # Start ollama serve in the background
             self.server_process = subprocess.Popen(
                 ["ollama", "serve"],
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL
             )
-            for _ in range(60):  
+            for _ in range(60):
                 if self.is_server_running():
                     self.server_status = ServerStatus.RUNNING
-                    print("Ollama server started successfully.")
-                    self.initialize()
+                    logger.log("Ollama server started successfully.", SERVER)
                     return True
                 if self.server_process.poll() is not None:
                     break  # Process has exited, likely an error
                 time.sleep(0.5)
-           
+
             self.server_status = ServerStatus.ERROR
-            print("Error: Ollama server failed to start.")
+            logger.log("Error: Ollama server failed to start.", SERVER)
             return False
         except FileNotFoundError:
-            print("Error: 'ollama' command not found. Please install Ollama from https://ollama.ai")
+            logger.log("Error: 'ollama' command not found. Please install Ollama from https://ollama.ai", SERVER)
             return False
         except Exception as e:
-            print(f"Error starting server: {e}")
+            logger.log(f"Error starting server: {e}", SERVER)
             return False
 
     def pull_model(self):
-        """Pull the model if not already present"""
+        """Pull the current model if not already present. Blocks until ready."""
         try:
-            print(f"Checking for model: {self.model}...")
+            logger.log(f"Checking for model: {self.model}...", self.model)
+            self.model_status = ModelStatus.LOADING
             ollama.pull(self.model)
-            print(f"Model {self.model} is ready.")
+            self.model_status = ModelStatus.LOADED
+            logger.log(f"Model {self.model} is ready.", self.model)
+            return True
         except Exception as e:
-            print(f"Error pulling model: {e}")
+            self.model_status = ModelStatus.ERROR
+            logger.log(f"Error pulling model: {e}", self.model)
             return False
 
     def initialize(self):
-        """Initialize server and model"""
-        if not self.is_server_running():
+        """Start the server (if needed) and make the current model ready."""
+        if not self.is_server_running() and not self.start_server():
             return False
-        try:
-            self.pull_model()
-            self.model_status = ModelStatus.LOADED
-            return True
-        except Exception as e:
-            print(f"Error initializing Qwen: {e}")
-            return False
+        return self.pull_model()
 
     def ask(self, question: str) -> str:
         """Ask Qwen a question"""
         if not self.is_server_running():
-            print("Server is not running. Call initialize() first.")
+            logger.log("Server is not running. Call initialize() first.", SERVER)
             return ""
-        
+
         try:
-            print(f"Asking question: {question}")
+            logger.log(f"Asking question: {question}", self.model)
             response = ollama.chat(
                 model=self.model,
                 messages=[
@@ -106,39 +104,38 @@ class OllamaServer:
                 ]
             )
             result = response["message"]["content"]
-            print(f"Received response: {result}")
+            logger.log(f"Received response ({len(result)} chars)", self.model)
             return result
         except Exception as e:
-            print(f"Error asking question: {e}")
+            logger.log(f"Error asking question: {e}", self.model)
             return f"Error: {str(e)}"
     
     def stop_server(self):
         """Stop the Ollama server"""
         if self.server_status == ServerStatus.RUNNING:
-            print("Stopping Ollama server...")
+            logger.log("Stopping Ollama server...", SERVER)
             self.server_process.terminate()
-            self.server_process = None  
+            self.server_process = None
             self.server_status = ServerStatus.NOT_RUNNING
-            print("Server stopped.")
+            logger.log("Server stopped.", SERVER)
 
     def change_model(self, new_model: str):
-        """Change the model being used"""
-        if self.model != new_model:
-            print(f"Changing model from {self.model} to {new_model}...")
-            def worker():
-                try:
-                    self.server_status = ServerStatus.STARTING
-                    self.pull_model()
-                    self.model = new_model
-                    self.server_status = ServerStatus.RUNNING
-                except Exception as e:
-                    print(f"Error changing model: {e}")
-                    self.server_status = ServerStatus.ERROR
-            threading.Thread(target=worker, daemon=True).start()
-            print(f"Model changed to {self.model}.")
-        else:
-            print(f"Model is already set to {self.model}. No change needed.")
-    
+        """Switch to another model. Blocks while it downloads - call from a worker thread."""
+        if self.model == new_model and self.model_status == ModelStatus.LOADED:
+            logger.log(f"Model is already set to {self.model}. No change needed.", self.model)
+            return True
+
+        logger.log(f"Changing model from {self.model} to {new_model}...", new_model)
+        previous_model = self.model
+        self.model = new_model
+        if self.initialize():
+            logger.log(f"Model changed to {self.model}.", self.model)
+            return True
+        # Keep the object honest about what is actually loaded.
+        logger.log(f"Failed to load {new_model}, staying on {previous_model}.", new_model)
+        self.model = previous_model
+        return False
+
     def __exit__(self, exc_type, exc_val, exc_tb):
         """Context manager cleanup"""
         self.stop_server()
