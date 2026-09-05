@@ -1,17 +1,23 @@
 from enum import Enum
 
 
-MODELS = ["Model 1", "Model 2", "Model 3"]
+MODELS = ["richardyoung/qwen2.5-coder-14b-instruct-abliterated"
+          ,"thomboe/dolphin3.0-llama3.1-8b-abliterated"
+            ,"R4C3R/gemma-3-12b-it-heretic"
+            ,"igorls/gemma-4-12B-it-qat-q4_0-unquantized-heretic"
+            ,"dolphin-mistral"
+            ,"dolphin-mixtral"
+            ,"dolphin-phi"]
 
 
 class ServerStatus(Enum):
-    NOT_RUNNING = 0
-    STARTING = 1
-    RUNNING = 2
-    ERROR = 3
+    NOT_RUNNING = "not running"
+    STARTING = "starting"
+    RUNNING = "running"
+    ERROR = "error"
 
 class ModelStatus(Enum):
-    NOT_LOADED = 0
-    LOADING = 1
-    DONE = 2
-    ERROR = 3
+    NOT_LOADED = "not loaded"
+    LOADING = "loading"
+    LOADED = "loaded"
+    ERROR = "error"

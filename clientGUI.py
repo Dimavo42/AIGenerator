@@ -2,8 +2,8 @@ import threading
 import tkinter as tk
 from abc import ABC, abstractmethod
 from tkinter import ttk
-from constants import MODELS
-from qwenServerManager import QwenServerManager
+from constants import MODELS, ModelStatus
+from ollamaServerManager import OllamaServerManager
 
 
 class PageBuilder(ABC):
@@ -12,8 +12,6 @@ class PageBuilder(ABC):
     A page is a Frame that lives inside the app's container, so swapping
     modes means swapping frames instead of opening new windows.
     """
-    _qwen_instance = QwenServerManager.get_qwen_instance()
-
     mode_name = ""
 
     def create_page(self, app):
@@ -39,8 +37,14 @@ class PageBuilder(ABC):
         self.text_output.pack(pady=10, padx=10)
         return self
 
-    def add_status_bar(self):
-        self.status_label = tk.Label(self.frame, text="Ready", fg="green")
+    def add_status_bar(self,model_status:ModelStatus):
+        colors = {
+            ModelStatus.NOT_LOADED: "red",
+            ModelStatus.LOADING: "orange",
+            ModelStatus.LOADED: "green",
+            ModelStatus.ERROR: "red",
+        }
+        self.status_label = tk.Label(self.frame, text=model_status.value, fg=colors.get(model_status))
         self.status_label.pack(pady=5)
         return self
 
@@ -78,7 +82,7 @@ class PageBuilder(ABC):
         threading.Thread(target=self._ask_worker, args=(question,), daemon=True).start()
 
     def _ask_worker(self, question):
-        response = self._qwen_instance.ask(question) if self._qwen_instance else ""
+        response = OllamaServerManager.ask_ollama(question)
         # Widgets may only be touched from the Tk main thread, and the page
         # may already be gone if the user swapped modes while waiting.
         if self.frame.winfo_exists():
@@ -93,6 +97,9 @@ class PageBuilder(ABC):
         self.text_output.config(state=tk.DISABLED)
         self.status_label.config(text="Ready", fg="green")
         self.entry.delete(0, tk.END)
+
+    def _addLooger(self):
+        pass
 
 class FetLifeBuilder(PageBuilder):
     mode_name = "FetLife Mode"
@@ -136,7 +143,7 @@ class ClientGUI:
         "Stocks": StocksBuilder,
     }
 
-    def __init__(self,threadID=None):
+    def __init__(self):
         self.root = tk.Tk()
         self.root.geometry("600x500")
         # Every page is packed into this container; only one lives at a time.
@@ -161,11 +168,8 @@ class ClientGUI:
         """Show the mode-selection page."""
         frame = tk.Frame(self.container)
         tk.Label(frame, text="Select Mode", font=("Arial", 18, "bold")).pack(pady=20)
-
         buttons = tk.Frame(frame)
         buttons.pack(pady=20)
-
-
         for index, (mode_name, builder_class) in enumerate(self.MODES.items()):
             tk.Button(
                 buttons,
@@ -175,17 +179,21 @@ class ClientGUI:
                 bg="lightblue",
                 font=("Arial", 12),
             ).grid(row=index, column=0, pady=5)
-            ttk.Combobox(
+            combo = ttk.Combobox(
                 buttons,
                 textvariable=self.model_vars[mode_name],
                 values=MODELS,
                 state="readonly",
                 width=15,
             ).grid(row=index, column=1, padx=10)
+        def on_click(event,builder_class,eventSelected):
+            selected_model = self.model_vars[builder_class.mode_name].get()
+            OllamaServerManager.change_model(selected_model)
+            self.show_mode(builder_class)
 
-
-
-        self._swap_page(frame, "Qwen AI - Mode Selector")
+            
+            
+        self._swap_page(frame, "Ollama - Mode Selector")
 
     def show_mode(self, builder_class):
         """Build a mode page through the builder chain and swap it in."""
@@ -195,7 +203,7 @@ class ClientGUI:
             .add_title(f"Welcome to {builder.mode_name}")
             .add_input_field()
             .add_output_area()
-            .add_status_bar()
+            .add_status_bar(self.getOllamaServerModelStatus())
             .add_mode_specific_widgets()
             .add_ask_button()
             .add_back_button()
@@ -203,6 +211,9 @@ class ClientGUI:
         )
         self._swap_page(frame, builder.mode_name)
         return frame
+
+    def getOllamaServerModelStatus(self):
+        return OllamaServerManager.get_model_status()
 
     def run(self):
         self.root.mainloop()

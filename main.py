@@ -1,11 +1,11 @@
 import threading
 from clientGUI import ClientGUI
-from qwenServerManager import QwenServerManager
+from ollamaServerManager import OllamaServerManager
 
 
 def main():
     # Warm up Ollama + the model in the background so the GUI shows up instantly.
-    threading.Thread(target=QwenServerManager().start_qwen_server, daemon=True).start()
+    threading.Thread(target=OllamaServerManager().start_ollama_server, daemon=True).start()
     ClientGUI().run()
 
 

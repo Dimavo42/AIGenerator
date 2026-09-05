@@ -6,7 +6,7 @@ import socket
 from constants import ServerStatus, ModelStatus
 
 
-class QwenServer:
+class OllamaServer:
     def __init__(self, model: str = "qwen2.5-coder:14b"):
         self.model = model
         self.server_status = ServerStatus.NOT_RUNNING
@@ -15,6 +15,9 @@ class QwenServer:
 
     def get_server_status(self):
         return self.server_status
+    
+    def get_model_status(self):
+        return self.model_status
 
     def get_model(self):
         return self.model
@@ -47,6 +50,7 @@ class QwenServer:
                 if self.is_server_running():
                     self.server_status = ServerStatus.RUNNING
                     print("Ollama server started successfully.")
+                    self.initialize()
                     return True
                 if self.server_process.poll() is not None:
                     break  # Process has exited, likely an error
@@ -78,6 +82,7 @@ class QwenServer:
             return False
         try:
             self.pull_model()
+            self.model_status = ModelStatus.LOADED
             return True
         except Exception as e:
             print(f"Error initializing Qwen: {e}")
@@ -85,7 +90,7 @@ class QwenServer:
 
     def ask(self, question: str) -> str:
         """Ask Qwen a question"""
-        if not self.is_running:
+        if not self.is_server_running():
             print("Server is not running. Call initialize() first.")
             return ""
         
