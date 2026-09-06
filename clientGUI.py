@@ -5,8 +5,110 @@ from tkinter import ttk
 from constants import MODELS, ModelStatus
 from logger import logger
 from ollamaServerManager import OllamaServerManager
+from scripts.environment import Environment
 
 ALL_SOURCES = "all"
+
+
+
+class EnvironmentTablePage(tk.Toplevel):
+    """Editable key/value grid for the .env file."""
+
+    def __init__(self, parent, data,on_close=None):
+        super().__init__(parent)
+        self.on_close = on_close
+        self.title("Environment Generator")
+        self.protocol("WM_DELETE_WINDOW", self._close)
+        self.rows = []
+        header = tk.Frame(self)
+        header.pack(padx=10, pady=(10, 0), anchor=tk.W)
+        tk.Label(header, text="Key", width=25, anchor=tk.W, font=("Arial", 10, "bold")).pack(side=tk.LEFT)
+        tk.Label(header, text="Value", width=35, anchor=tk.W, font=("Arial", 10, "bold")).pack(side=tk.LEFT)
+        self.rows_frame = tk.Frame(self)
+        self.rows_frame.pack(padx=10, pady=5, anchor=tk.W)
+        
+        self.create_grid_of_values(data)
+        buttons = tk.Frame(self)
+        buttons.pack(pady=10)
+        tk.Button(buttons, text="Save", command=self._save, bg="blue", fg="white").pack(side=tk.LEFT, padx=5)
+
+    def create_grid_of_values(self, data):
+        for name, value in data.items():
+            row = tk.Frame(self.rows_frame)
+            row.pack(anchor=tk.W)
+            tk.Label(row, text=name, width=25, anchor=tk.W).pack(side=tk.LEFT)
+            value_entry = tk.Entry(row, width=35)
+            value_entry.insert(0, value)
+            value_entry.pack(side=tk.LEFT)
+            # The key is fixed for these rows, so keep the name instead of a widget.
+            self.rows.append((name, value_entry))
+
+    def _save(self):
+        values = {
+            key:value.get() for key, value in self.rows
+        }
+        Environment.save_all(values)
+        logger.log(f"Saved {len(Environment.get_all_enviorment())} environment keys.", "Environment")
+        self._close()
+
+    def _close(self):
+        self.destroy()
+        if self.on_close is not None:
+            self.on_close()
+
+class LoggerPage(tk.Toplevel):
+    """Live view of the app log, filtered by source, refreshed twice a second."""
+
+    def __init__(self, parent, on_close=None):
+        super().__init__(parent)
+        self.on_close = on_close
+        self.title("Logger")
+        self.geometry("700x400")
+        controls = tk.Frame(self)
+        controls.pack(fill=tk.X, padx=5, pady=5)
+        tk.Label(controls, text="Source:").pack(side=tk.LEFT)
+        self.source_var = tk.StringVar(value=ALL_SOURCES)
+        self.source_box = ttk.Combobox(
+            controls, textvariable=self.source_var, state="readonly", width=50
+        )
+        self.source_box.pack(side=tk.LEFT, padx=5)
+        self.protocol("WM_DELETE_WINDOW", self._close)
+        scrollbar = tk.Scrollbar(self)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        self.logger_text = tk.Text(
+            self, wrap=tk.WORD, state=tk.DISABLED, yscrollcommand=scrollbar.set
+        )
+        self.logger_text.pack(fill=tk.BOTH, expand=True)
+        scrollbar.config(command=self.logger_text.yview)
+        self._refresh()
+
+    def _refresh(self):
+        if not self.winfo_exists():
+            return  # Window closed - stop the polling loop.
+        self.source_box["values"] = [ALL_SOURCES] + logger.get_instance_names()
+        source = self.source_var.get()
+        lines = (
+            logger.get_all_logs()
+            if source == ALL_SOURCES
+            else logger.get_logs_by_name(source)
+        )
+        text = "\n".join(lines)
+        # Only redraw on a real change, otherwise the user can never keep a
+        # selection or a scroll position.
+        if text != self.logger_text.get(1.0, tk.END).rstrip("\n"):
+            was_at_bottom = self.logger_text.yview()[1] >= 0.99
+            self.logger_text.config(state=tk.NORMAL)
+            self.logger_text.delete(1.0, tk.END)
+            self.logger_text.insert(tk.END, text)
+            self.logger_text.config(state=tk.DISABLED)
+            if was_at_bottom:
+                self.logger_text.see(tk.END)
+        self.after(500, self._refresh)
+
+    def _close(self):
+        self.destroy()
+        if self.on_close is not None:
+            self.on_close()
 
 
 class PageBuilder(ABC):
@@ -69,7 +171,10 @@ class PageBuilder(ABC):
         return self
 
     def build(self):
+        # Every page gets the environment generator - the ABC owns it, so no
+        # builder or caller has to remember to ask for it.
         return self.frame
+
 
     # ---- ask flow ----
     def _ask_question(self):
@@ -99,7 +204,6 @@ class PageBuilder(ABC):
         self.status_label.config(text="Ready", fg="green")
         self.entry.delete(0, tk.END)
         logger.log("Answer shown.", self.mode_name)
-
 
 class FetLifeBuilder(PageBuilder):
     mode_name = "FetLife Mode"
@@ -141,10 +245,10 @@ class StocksBuilder(PageBuilder):
 # ============ MAIN APPLICATION ============
 class ClientGUI:
     MODES = {
-        "FetLife": FetLifeBuilder,
-        "Telegram": TelegramBuilder,
-        "Stocks": StocksBuilder,
-    }
+            "FetLife": FetLifeBuilder,
+            "Telegram": TelegramBuilder,
+            "Stocks": StocksBuilder,
+            }
 
     def __init__(self):
         self.root = tk.Tk()
@@ -158,6 +262,8 @@ class ClientGUI:
             mode_name: tk.StringVar(value=MODELS[0]) for mode_name in self.MODES
         }
         logger.log("GUI started.")
+        self.logger_instance = None
+        self.environment_generator_instance = None 
         self.show_selector()
 
     # ---- page swapping ----
@@ -192,6 +298,7 @@ class ClientGUI:
             ).grid(row=index, column=1, padx=10)
         tk.Label(frame,text="Show Logger:").pack(pady=(20,5))
         tk.Button(frame, text="Show Logger", command=self.show_Logger).pack(pady=5)
+        tk.Button(frame, text="Enviroment genratore", command=self._environment_generator).pack(padx=5)
         self._swap_page(frame, "Ollama - Mode Selector")
 
     # ---- opening a mode ----
@@ -278,55 +385,38 @@ class ClientGUI:
         return OllamaServerManager.get_model_status()
 
     def show_Logger(self):
-        """Live view of the app log, filtered by source, refreshed twice a second."""
-        logger_window = tk.Toplevel(self.root)
-        logger_window.title("Logger")
-        logger_window.geometry("700x400")
+        """Open the logger window, or raise the one that is already open."""
+        if (self.logger_instance is not None
+                and self.logger_instance.winfo_exists()):
+            self.logger_instance.lift()
+            self.logger_instance.focus_force()
+            return
+        self.logger_instance = LoggerPage(self.root, on_close=self._close_logger)
 
-        controls = tk.Frame(logger_window)
-        controls.pack(fill=tk.X, padx=5, pady=5)
-        tk.Label(controls, text="Source:").pack(side=tk.LEFT)
-        source_var = tk.StringVar(value=ALL_SOURCES)
-        source_box = ttk.Combobox(
-            controls, textvariable=source_var, state="readonly", width=50
+    def _environment_generator(self):
+        """Open the environment window, or raise the one that is already open."""
+        if (self.environment_generator_instance is not None
+                and self.environment_generator_instance.winfo_exists()):
+            self.environment_generator_instance.lift()
+            self.environment_generator_instance.focus_force()
+            return
+        data = Environment.load_from_env()
+        if not data:
+            data = {key: "" for key in self.MODES}
+        self.environment_generator_instance = EnvironmentTablePage(
+            self.root, data, on_close=self._close_environment_generator
         )
-        source_box.pack(side=tk.LEFT, padx=5)
 
-        scrollbar = tk.Scrollbar(logger_window)
-        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-        logger_text = tk.Text(
-            logger_window, wrap=tk.WORD, state=tk.DISABLED, yscrollcommand=scrollbar.set
-        )
-        logger_text.pack(fill=tk.BOTH, expand=True)
-        scrollbar.config(command=logger_text.yview)
+    def _close_environment_generator(self):
+        # The window destroys itself; we only drop the reference so the next
+        # click builds a fresh one.
+        self.environment_generator_instance = None
 
-        def refresh():
-            if not logger_window.winfo_exists():
-                return  # Window closed - stop the polling loop.
-            source_box["values"] = [ALL_SOURCES] + logger.get_instance_names()
-            source = source_var.get()
-            lines = (
-                logger.get_all_logs()
-                if source == ALL_SOURCES
-                else logger.get_logs_by_name(source)
-            )
-            text = "\n".join(lines)
-            # Only redraw on a real change, otherwise the user can never keep a
-            # selection or a scroll position.
-            if text != logger_text.get(1.0, tk.END).rstrip("\n"):
-                was_at_bottom = logger_text.yview()[1] >= 0.99
-                logger_text.config(state=tk.NORMAL)
-                logger_text.delete(1.0, tk.END)
-                logger_text.insert(tk.END, text)
-                logger_text.config(state=tk.DISABLED)
-                if was_at_bottom:
-                    logger_text.see(tk.END)
-            logger_window.after(500, refresh)
-
-        refresh()
+    def _close_logger(self):
+        # The window destroys itself; we only drop the reference so the next
+        # click builds a fresh one.
+        self.logger_instance = None
 
     def run(self):
         self.root.mainloop()
-
-
 

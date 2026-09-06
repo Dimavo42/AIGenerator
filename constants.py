@@ -21,3 +21,4 @@ class ModelStatus(Enum):
     LOADING = "loading"
     LOADED = "loaded"
     ERROR = "error"
+
