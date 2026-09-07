@@ -1,8 +1,7 @@
 import threading
 from collections import deque
 from datetime import datetime, timedelta
-
-GLOBAL = 'global'
+from constants import LogSource
 
 
 class Logger:
@@ -11,13 +10,13 @@ class Logger:
         # _logs goes through the lock.
         self._lock = threading.Lock()
         self._logs = {
-            GLOBAL: deque(maxlen=100)  # Keep the last 100 global logs
+            LogSource.GLOBAL: deque(maxlen=100)  # Keep the last 100 global logs
         }
 
     def log(self, message, instance_name = None):
         date_time = datetime.now()
         if instance_name is None:
-            instance_name = GLOBAL
+            instance_name = LogSource.GLOBAL
         with self._lock:
             if instance_name not in self._logs:
                 self._logs[instance_name] = deque(maxlen=100)
@@ -25,7 +24,7 @@ class Logger:
 
     def get_logs_by_name(self,instance_name = None):
         if instance_name is None:
-            instance_name = GLOBAL
+            instance_name = LogSource.GLOBAL
         with self._lock:
             logs = self._logs.get(instance_name)
             if logs is None:
@@ -34,7 +33,7 @@ class Logger:
 
     def get_logs_by_time_frame(self,seconds,instance_name = None):
         if instance_name is None:
-            instance_name = GLOBAL
+            instance_name = LogSource.GLOBAL
         cut_time = datetime.now() - timedelta(seconds=seconds)
         with self._lock:
             logs = self._logs.get(instance_name)

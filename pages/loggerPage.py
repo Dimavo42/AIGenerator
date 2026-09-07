@@ -1,0 +1,64 @@
+import tkinter as tk
+from tkinter import ttk
+
+from constants import LogSource
+from logger import logger
+
+
+class LoggerPage(tk.Toplevel):
+    """Live view of the app log, filtered by source, refreshed twice a second."""
+
+    def __init__(self, parent, on_close=None):
+        super().__init__(parent)
+        self.on_close = on_close
+        self.title("Logger")
+        self.geometry("700x400")
+        controls = tk.Frame(self)
+        controls.pack(fill=tk.X, padx=5, pady=5)
+        tk.Label(controls, text="Source:").pack(side=tk.LEFT)
+        self.source_var = tk.StringVar(value=LogSource.ALL_SOURCES)
+        self.source_box = ttk.Combobox(
+            controls, textvariable=self.source_var, state="readonly", width=50
+        )
+        self.source_box.pack(side=tk.LEFT, padx=5)
+        self.protocol("WM_DELETE_WINDOW", self._close)
+        scrollbar = tk.Scrollbar(self)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        self.logger_text = tk.Text(
+            self, wrap=tk.WORD, state=tk.DISABLED, yscrollcommand=scrollbar.set
+        )
+        self.logger_text.pack(fill=tk.BOTH, expand=True)
+        scrollbar.config(command=self.logger_text.yview)
+        self._refresh()
+
+    def _refresh(self):
+        if not self.winfo_exists():
+            return  # Window closed - stop the polling loop.
+        # Tk stores the combobox values as plain strings, so hand it strings the
+        # filter below can compare against.
+        self.source_box["values"] = [str(LogSource.ALL_SOURCES)] + [
+            str(name) for name in logger.get_instance_names()
+        ]
+        source = self.source_var.get()
+        lines = (
+            logger.get_all_logs()
+            if source == LogSource.ALL_SOURCES
+            else logger.get_logs_by_name(source)
+        )
+        text = "\n".join(lines)
+        # Only redraw on a real change, otherwise the user can never keep a
+        # selection or a scroll position.
+        if text != self.logger_text.get(1.0, tk.END).rstrip("\n"):
+            was_at_bottom = self.logger_text.yview()[1] >= 0.99
+            self.logger_text.config(state=tk.NORMAL)
+            self.logger_text.delete(1.0, tk.END)
+            self.logger_text.insert(tk.END, text)
+            self.logger_text.config(state=tk.DISABLED)
+            if was_at_bottom:
+                self.logger_text.see(tk.END)
+        self.after(500, self._refresh)
+
+    def _close(self):
+        self.destroy()
+        if self.on_close is not None:
+            self.on_close()
