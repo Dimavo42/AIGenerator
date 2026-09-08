@@ -39,15 +39,13 @@ class StocksTable(PageBuilder):
         self.symbol_entry.bind("<Return>", lambda _event: self._add_symbol())
         tk.Button(add_row, text="Add", command=self._add_symbol).pack(side=tk.LEFT, padx=5)
         tk.Button(add_row, text="Remove", command=self._remove_symbol).pack(side=tk.LEFT, padx=5)
-        self.tree = ttk.Treeview(
-            self.frame, columns=[name for name, _, _ in self.COLUMNS], show="headings", height=15
-        )
+        self.tree = ttk.Treeview(self.frame, columns=[name for name, _, _ in self.COLUMNS], show="headings", height=15)
         for name, title, width in self.COLUMNS:
             self.tree.heading(name, text=title)
             self.tree.column(name, width=width, anchor=tk.W)
         self.tree.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
         self.tree.bind("<Double-1>", self._on_double_click)
-        self.api_status = tk.Label(self.frame, text="Not loaded yet.", fg="gray")
+        self.api_status = tk.Label(self.frame, text=ModelStatus.LOADING, fg=STATUS_COLORS[ModelStatus.LOADING])
         self.api_status.pack(pady=5)
         buttons = tk.Frame(self.frame)
         buttons.pack(pady=5)
@@ -206,44 +204,91 @@ class StocksPage(PageBuilder):
         self.chat_page.on_response(response, status)
 
 class StockChartPopUp(tk.Toplevel):
-      def __init__(self, parent, symbol):
-            # The mode page passes a callback so a picked row can reach the chat.
-            super().__init__(parent)
-            self.title(f"{symbol} chart")
-            self.symbol = symbol
-            self.geometry("900x600")
-            tk.Label(self,text="Price History",font=("Arial",16,"bold")).pack(pady=10)
-            self.status_label = tk.Label(self,text=ModelStatus.LOADING,fg=STATUS_COLORS[ModelStatus.LOADING])
-            self.status_label.pack()
-            self.figure = Figure(
-                figsize=(8,5),
-                dpi=100
-            )
-            self.ax = self.figure.add_subplot(111)
-            self.canvas = FigureCanvasTkAgg(self.figure, self)
-            self.canvas.get_tk_widget().pack(fill=tk.BOTH,expand=True,padx=10,pady=10)
-            threading.Thread(target=self._load_data,daemon=True).start()
 
-      def _load_data(self):
-          history = YFinanceApi.shared().get_history(self.symbol,period="1mo",interval="1d")
-          if self.winfo_exists():
-            self.after(0,self._draw_char,history)
+    PERIODS = {
+        "1M": "1mo",
+        "3M": "3mo",
+        "6M": "6mo",
+        "1Y": "1y",
+        "2Y": "2y",
+        "5Y": "5y",
+    }
 
-      def _draw_char(self,history):
-          if history is None or history.empty:
-              self.status_label.config(text="No history cant draw char",fg="red")
-              return
-          self.ax.clear()
-          self.ax.plot(history.index,history["Close"])
-          self.ax.set_title(f"{self.symbol} - Last Month")
-          self.ax.set_xlabel("Date")
-          self.ax.set_ylabel("Price")
-          self.ax.grid(True)
-          self.figure.autofmt_xdate()
-          self.canvas.draw()
-          self.status_label.config(
-            text=f"{len(history)} points loaded.",
-            fg="green"
-        )
+    INTERVALS = [
+        "1d",
+        "5d",
+        "1wk",
+        "1mo",
+    ]
+
+    def __init__(self, parent, symbol):
+        super().__init__(parent)
+        self.symbol = symbol
+        self.current_period = "1mo"
+        self.title(f"{symbol} Chart")
+        self.geometry("1000x650")
+        # ---------- Title ----------
+        tk.Label(self,text=f"{symbol} Price History",font=("Arial", 16, "bold")).pack(pady=(10, 5))
+        # ---------- Status ----------
+        self.status_label = tk.Label(self,text=ModelStatus.LOADING,fg=STATUS_COLORS[ModelStatus.LOADING])
+        self.status_label.pack(pady=5)
+        # ---------- Controls ----------
+        controls = tk.Frame(self)
+        controls.pack(fill=tk.X,padx=15,pady=5)
+        tk.Label(controls,text="Range:").pack(side=tk.LEFT,padx=(0, 5))
+        for text, period in self.PERIODS.items():
+            tk.Button(
+                controls,
+                text=text,
+                command=lambda p=period: self._change_period(p)).pack(side=tk.LEFT,padx=2)
+        tk.Label(controls,text="Interval:").pack( side=tk.LEFT,padx=(20, 5))
+        self.interval_var = tk.StringVar(value="1d")
+        self.interval_combo = ttk.Combobox(
+            controls,
+            textvariable=self.interval_var,
+            values=self.INTERVALS,
+            state="readonly",
+            width=8)
+        self.interval_combo.pack(side=tk.LEFT)
+        self.interval_combo.bind("<<ComboboxSelected>>",lambda _event: self.reload_chart())
+        # ---------- Graph ----------
+        self.figure = Figure(figsize=(8, 5),dpi=100)
+        self.ax = self.figure.add_subplot(111)
+        self.canvas = FigureCanvasTkAgg(self.figure,master=self)
+        self.canvas.get_tk_widget().pack(fill=tk.BOTH,expand=True,padx=10,pady=10)
+        # Initial graph
+        self.reload_chart()
+
+    def _change_period(self, period):
+        self.current_period = period
+        self.reload_chart()
+
+    def reload_chart(self):
+        self.status_label.config(text=ModelStatus.LOADING,fg=STATUS_COLORS[ModelStatus.LOADING])
+        period = self.current_period
+        interval = self.interval_var.get()
+        threading.Thread(target=self._load_data,args=(period, interval),daemon=True).start()
+
+    def _load_data(self, period, interval):
+        history = YFinanceApi.shared().get_history(
+            self.symbol,
+            period=period,
+            interval=interval)
+        if self.winfo_exists():
+            self.after(0,self._draw_chart,history,period)
+
+    def _draw_chart(self, history, period):
+        if history is None or history.empty:
+            self.status_label.config(text="No history available.",fg=STATUS_COLORS[ModelStatus.NOT_LOADED])
+            return
+        self.ax.clear()
+        self.ax.plot(history.index,history["Close"])
+        self.ax.set_title(f"{self.symbol} - {period}")
+        self.ax.set_xlabel("Date")
+        self.ax.set_ylabel("Price")
+        self.ax.grid(True)
+        self.figure.autofmt_xdate()
+        self.canvas.draw()
+        self.status_label.config(text=f"{len(history)} points loaded.",fg=STATUS_COLORS[ModelStatus.LOADED])
         
             
