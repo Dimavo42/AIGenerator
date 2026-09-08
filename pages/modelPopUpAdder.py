@@ -1,6 +1,4 @@
 from tkinter import messagebox
-
-from core.logger import logger
 import tkinter as tk
 from scripts.modelsManager import ModelsManager
 

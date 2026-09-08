@@ -1,7 +1,6 @@
-
 import threading
 from constants import ModelStatus
-from core.logger import logger
+from core.logger import Logger
 from core.ollamaServer import OllamaServer
 
 
@@ -16,7 +15,7 @@ class OllamaServerManager:
             if cls._ollama_instance is None:
                 instance = OllamaServer()
                 if instance.initialize() != ModelStatus.LOADED:
-                    logger.log("Could not start the Ollama server.")
+                    Logger.log("Could not start the Ollama server.")
                     return None
                 cls._ollama_instance = instance
             return cls._ollama_instance
@@ -33,7 +32,7 @@ class OllamaServerManager:
     @classmethod
     def ask_ollama(cls, question: str) -> str | ModelStatus:
         if cls._ollama_instance is None:
-            logger.log("Question rejected: Ollama server is not running.")
+            Logger.log("Question rejected: Ollama server is not running.")
             return ModelStatus.ERROR
         return cls._ollama_instance.ask(question)
 

@@ -1,14 +1,12 @@
 import tkinter as tk
-
 from constants import STATUS_COLORS, LogSource, ModelStatus
-from core.logger import logger
+from core.logger import Logger
 from core.ollamaServerManager import OllamaServerManager
 from pages.pageBuilder import PageBuilder
 
 
 class ChatModePage(PageBuilder):
     """The chat page: every widget of the mode, plus how an answer is shown."""
-
     mode_name = LogSource.CHAT_MODE
     geometry = "800x600"
 
@@ -68,7 +66,7 @@ class ChatModePage(PageBuilder):
         if self.frame.winfo_exists():
             self.frame.after(0, self._show_response, response, status)
         else:
-            logger.log("Answer dropped - the user left the page.", self.mode_name)
+            Logger.log("Answer dropped - the user left the page.", self.mode_name)
 
     # ---- Tk thread ----
     def _ask_question(self):
@@ -88,4 +86,4 @@ class ChatModePage(PageBuilder):
         self._set_output(text)
         self.on_status(status)
         self.entry.delete(0, tk.END)
-        logger.log("Answer shown.", self.mode_name)
+        Logger.log("Answer shown.", self.mode_name)

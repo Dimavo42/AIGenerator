@@ -2,7 +2,7 @@ import threading
 import tkinter as tk
 from tkinter import ttk
 from constants import  STATUS_COLORS, ModelStatus
-from core.logger import logger
+from core.logger import Logger
 from core.ollamaServerManager import OllamaServerManager
 from pages.chatModePage import ChatModePage
 from pages.environmentTablePage import EnvironmentTablePage
@@ -39,7 +39,7 @@ class ClientManager:
          # Kept on the instance so the vars outlive the selector frame.
         self.model_vars = { mode_name: tk.StringVar(value=self._models[0]) for mode_name in self._MODES }
         self.model_comboboxes = {}
-        logger.log("GUI started.")
+        Logger.log("GUI started.")
         self.show_selector()
 
     # ---- page swapping ----
@@ -88,7 +88,7 @@ class ClientManager:
     def load_model(self, mode_name, builder_class):
         """Load the model picked for this mode, then show the mode page."""
         selected_model = self.model_vars[mode_name].get()
-        logger.log(f"Opening {mode_name} with {selected_model}.", builder_class.mode_name)
+        Logger.log(f"Opening {mode_name} with {selected_model}.", builder_class.mode_name)
         if (
             selected_model == OllamaServerManager.get_model()
             and OllamaServerManager.get_model_status() == ModelStatus.LOADED
@@ -128,7 +128,7 @@ class ClientManager:
     def _on_model_loaded(self, loading, builder_class, model_name, status: ModelStatus):
         # Ignore a late callback from a page the user already navigated away from.
         if self.current_page is not loading:
-            logger.log(f"Ignoring late load result for {model_name}.")
+            Logger.log(f"Ignoring late load result for {model_name}.")
             return
         if status == ModelStatus.LOADED:
             self.show_mode(builder_class)

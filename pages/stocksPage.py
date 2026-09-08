@@ -1,11 +1,13 @@
 import threading
 import tkinter as tk
 from tkinter import ttk
-from constants import DEFAULT_TICKERS, LogSource, ModelStatus
-from core.logger import logger
+from constants import DEFAULT_TICKERS, STATUS_COLORS, LogSource, ModelStatus
+from core.logger import Logger
 from pages.chatModePage import ChatModePage
 from pages.pageBuilder import PageBuilder
 from core.yfinanceApi import YFinanceApi
+from matplotlib.figure import Figure
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 
 
 class StocksTable(PageBuilder):
@@ -44,10 +46,9 @@ class StocksTable(PageBuilder):
             self.tree.heading(name, text=title)
             self.tree.column(name, width=width, anchor=tk.W)
         self.tree.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
-
+        self.tree.bind("<Double-1>", self._on_double_click)
         self.api_status = tk.Label(self.frame, text="Not loaded yet.", fg="gray")
         self.api_status.pack(pady=5)
-
         buttons = tk.Frame(self.frame)
         buttons.pack(pady=5)
         tk.Button(buttons, text="Refresh", command=self.refresh).pack(side=tk.LEFT, padx=5)
@@ -116,6 +117,16 @@ class StocksTable(PageBuilder):
         if symbol is not None:
             self.on_pick(symbol)
 
+    def _on_double_click(self,event):
+        row_id = self.tree.identify_row(event.y)
+        if not row_id:
+            return
+        values = self.tree.item(row_id, "values")
+        if not values:
+            return
+        symbol = values[0]
+        StockChartPopUp(self.frame,symbol)
+
     # ---- PageBuilder hooks ----
     # This half never asks the model itself; the chat half does that.
     def on_status(self, status: ModelStatus):
@@ -154,7 +165,7 @@ class StocksPage(PageBuilder):
         stocks_frame = self.table_page.build(app,self.frame)
         chat_frame.grid(row=1,column=0,sticky="nsew",padx=(10, 5),pady=10)
         stocks_frame.grid(row=1,column=1,sticky="nsew",padx=(5, 10),pady=10)
-        logger.log("Stocks mode opened with the chat and the stocks pages.",self.mode_name)
+        Logger.log("Stocks mode opened with the chat and the stocks pages.",self.mode_name)
         return self.frame
 
     def _ask_about(self, symbol: str):
@@ -193,3 +204,46 @@ class StocksPage(PageBuilder):
 
     def on_response(self, response: str | None, status: ModelStatus):
         self.chat_page.on_response(response, status)
+
+class StockChartPopUp(tk.Toplevel):
+      def __init__(self, parent, symbol):
+            # The mode page passes a callback so a picked row can reach the chat.
+            super().__init__(parent)
+            self.title(f"{symbol} chart")
+            self.symbol = symbol
+            self.geometry("900x600")
+            tk.Label(self,text="Price History",font=("Arial",16,"bold")).pack(pady=10)
+            self.status_label = tk.Label(self,text=ModelStatus.LOADING,fg=STATUS_COLORS[ModelStatus.LOADING])
+            self.status_label.pack()
+            self.figure = Figure(
+                figsize=(8,5),
+                dpi=100
+            )
+            self.ax = self.figure.add_subplot(111)
+            self.canvas = FigureCanvasTkAgg(self.figure, self)
+            self.canvas.get_tk_widget().pack(fill=tk.BOTH,expand=True,padx=10,pady=10)
+            threading.Thread(target=self._load_data,daemon=True).start()
+
+      def _load_data(self):
+          history = YFinanceApi.shared().get_history(self.symbol,period="1mo",interval="1d")
+          if self.winfo_exists():
+            self.after(0,self._draw_char,history)
+
+      def _draw_char(self,history):
+          if history is None or history.empty:
+              self.status_label.config(text="No history cant draw char",fg="red")
+              return
+          self.ax.clear()
+          self.ax.plot(history.index,history["Close"])
+          self.ax.set_title(f"{self.symbol} - Last Month")
+          self.ax.set_xlabel("Date")
+          self.ax.set_ylabel("Price")
+          self.ax.grid(True)
+          self.figure.autofmt_xdate()
+          self.canvas.draw()
+          self.status_label.config(
+            text=f"{len(history)} points loaded.",
+            fg="green"
+        )
+        
+            

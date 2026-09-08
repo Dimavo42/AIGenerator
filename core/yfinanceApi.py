@@ -2,7 +2,7 @@ import threading
 from concurrent.futures import ThreadPoolExecutor
 import yfinance
 from constants import LogSource
-from core.logger import logger
+from core.logger import Logger
 
 
 class YFinanceApi:
@@ -38,7 +38,7 @@ class YFinanceApi:
         with ThreadPoolExecutor(max_workers=min(8, len(symbols))) as pool:
             rows = list(pool.map(self.get_quote, symbols))
         rows = [row for row in rows if row is not None]
-        logger.log(f"Loaded {len(rows)} of {len(symbols)} quotes.", self.name)
+        Logger.log(f"Loaded {len(rows)} of {len(symbols)} quotes.", self.name)
         return rows
 
     def get_quote(self, symbol: str) -> dict | None:
@@ -51,7 +51,7 @@ class YFinanceApi:
             previous = self._pick(fast, "previous_close", "previousClose")
             if last is None:
                 # Yahoo answers with an empty quote for a symbol it does not know.
-                logger.log(f"No quote for {symbol}.", self.name)
+                Logger.log(f"No quote for {symbol}.", self.name)
                 return None
             return {
                 "symbol": symbol,
@@ -61,7 +61,7 @@ class YFinanceApi:
                 "currency": self._pick(fast, "currency") or "",
             }
         except Exception as error:
-            logger.log(f"{symbol} failed: {error}", self.name)
+            Logger.log(f"{symbol} failed: {error}", self.name)
             return None
 
     def get_name(self, symbol: str) -> str:
@@ -74,10 +74,22 @@ class YFinanceApi:
             info = yfinance.Ticker(symbol).info or {}
             name = info.get("shortName") or info.get("longName") or symbol
         except Exception as error:
-            logger.log(f"No name for {symbol}: {error}", self.name)
+            Logger.log(f"No name for {symbol}: {error}", self.name)
         self._names[symbol] = name
         return name
 
+    def get_history(self,symbol,period="1mo",interval="1d"):
+        try:
+            ticker = yfinance.Ticker(symbol)
+            history = ticker.history(period=period,interval=interval)
+            if history.empty:
+                return None
+            return history
+        except Exception as e:
+            Logger.log(
+                f"Failed loading history for {symbol}: {e}"
+            )
+            return None
     # ---- what the model is told ----
     def get_summary(self, symbol: str) -> str | None:
         """The facts about one symbol, as the lines handed to the model.
@@ -91,7 +103,7 @@ class YFinanceApi:
             fast = ticker.fast_info
             info = ticker.info or {}
         except Exception as error:
-            logger.log(f"No summary for {symbol}: {error}", self.name)
+            Logger.log(f"No summary for {symbol}: {error}", self.name)
             return None
 
         last = self._pick(fast, "last_price", "lastPrice")
@@ -132,7 +144,7 @@ class YFinanceApi:
             closes = history["Close"].tail(5)
             return ", ".join(f"{date:%d/%m}: {close:.2f}" for date, close in closes.items())
         except Exception as error:
-            logger.log(f"No history: {error}", self.name)
+            Logger.log(f"No history: {error}", self.name)
             return ""
 
     # ---- shaping the numbers ----

@@ -2,7 +2,7 @@ import tkinter as tk
 from tkinter import ttk
 
 from constants import LogSource
-from core.logger import logger
+from core.logger import Logger
 
 
 class LoggerPage(tk.Toplevel):
@@ -37,13 +37,13 @@ class LoggerPage(tk.Toplevel):
         # Tk stores the combobox values as plain strings, so hand it strings the
         # filter below can compare against.
         self.source_box["values"] = [str(LogSource.ALL_SOURCES)] + [
-            str(name) for name in logger.get_instance_names()
+            str(name) for name in Logger.get_instance_names()
         ]
         source = self.source_var.get()
         lines = (
-            logger.get_all_logs()
+            Logger.get_all_logs()
             if source == LogSource.ALL_SOURCES
-            else logger.get_logs_by_name(source)
+            else Logger.get_logs_by_name(source)
         )
         text = "\n".join(lines)
         # Only redraw on a real change, otherwise the user can never keep a

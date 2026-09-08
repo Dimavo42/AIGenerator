@@ -1,8 +1,7 @@
 from abc import ABC, abstractmethod
 import threading
-
 from constants import ModelStatus
-from core.logger import logger
+from core.logger import Logger
 from core.ollamaServerManager import OllamaServerManager
 
 
@@ -26,7 +25,7 @@ class PageBuilder(ABC):
         question = (question or "").strip()
         if not question:
             return False
-        logger.log(f"Asking: {question}", self.mode_name)
+        Logger.log(f"Asking: {question}", self.mode_name)
         self.on_status(ModelStatus.GENERATING)
         threading.Thread(target=self._ask_worker, args=(question,), daemon=True).start()
         return True

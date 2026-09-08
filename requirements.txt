@@ -1,3 +1,4 @@
 ollama
 python-dotenv
 yfinance
+matplotlib
