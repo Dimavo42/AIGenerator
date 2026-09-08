@@ -131,29 +131,30 @@ class StocksPage(PageBuilder):
     Both halves are ordinary pages - this one only puts them side by side and
     turns a picked symbol into a question the model can actually answer.
     """
-
     mode_name = LogSource.STOCKS_MODE
-    # yfinance reads public data, so this mode needs no key at all.
-    geometry = "1200x700"
+    geometry = "1200x800"
 
     def build(self, app, parent=None):
         self.app = app
         self.frame = tk.Frame(parent or app.container)
-
+        # Make the content row expand
+        self.frame.rowconfigure(1, weight=1)
+        # Two equal-width columns
+        self.frame.columnconfigure(0, weight=1, uniform="half")
+        self.frame.columnconfigure(1, weight=1, uniform="half")
+        # ---------- Header ----------
         header = tk.Frame(self.frame)
-        header.pack(fill=tk.X, pady=(8, 0), padx=10)
-        tk.Label(header, text=f"{self.mode_name}", font=("Arial", 16, "bold")).pack(side=tk.LEFT)
-        tk.Button(header, text="← Back to modes", command=app.show_selector).pack(side=tk.RIGHT)
-
-        split = tk.PanedWindow(self.frame, orient=tk.HORIZONTAL, sashwidth=6)
-        split.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
-
+        header.grid(row=0,column=0,columnspan=2,sticky="ew",padx=10,pady=(8, 0))
+        tk.Label(header,text=f"{self.mode_name}",font=("Arial", 16, "bold")).pack(side=tk.LEFT)
+        tk.Button(header,text="← Back to modes",command=app.show_selector).pack(side=tk.RIGHT)
+        # ---------- Pages ----------
         self.chat_page = ChatModePage()
         self.table_page = StocksTable(on_pick=self._ask_about)
-        split.add(self.chat_page.build(app, split))
-        split.add(self.table_page.build(app, split))
-
-        logger.log("Stocks mode opened with the chat and the stocks pages.", self.mode_name)
+        chat_frame = self.chat_page.build(app,self.frame)
+        stocks_frame = self.table_page.build(app,self.frame)
+        chat_frame.grid(row=1,column=0,sticky="nsew",padx=(10, 5),pady=10)
+        stocks_frame.grid(row=1,column=1,sticky="nsew",padx=(5, 10),pady=10)
+        logger.log("Stocks mode opened with the chat and the stocks pages.",self.mode_name)
         return self.frame
 
     def _ask_about(self, symbol: str):

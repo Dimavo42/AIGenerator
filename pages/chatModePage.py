@@ -10,6 +10,7 @@ class ChatModePage(PageBuilder):
     """The chat page: every widget of the mode, plus how an answer is shown."""
 
     mode_name = LogSource.CHAT_MODE
+    geometry = "800x600"
 
     def build(self, app, parent=None):
         """Build the page inside `parent` (app.container by default)."""
@@ -17,33 +18,26 @@ class ChatModePage(PageBuilder):
         # Embedded in another page: that page owns the navigation.
         self.is_embedded = parent is not None
         self.frame = tk.Frame(parent or app.container)
-
-        tk.Label(
-            self.frame, text=f"Welcome to {self.mode_name}", font=("Arial", 16, "bold")
-        ).pack(pady=10)
-
+        tk.Label(self.frame, text=f"Welcome to {self.mode_name}", font=("Arial", 16, "bold")).pack(pady=10)
         input_row = tk.Frame(self.frame)
         input_row.pack(pady=10)
         tk.Label(input_row, text="Question:").pack(side=tk.LEFT, padx=5)
         self.entry = tk.Entry(input_row, width=50)
         self.entry.pack(side=tk.LEFT, padx=5)
         self.entry.bind("<Return>", lambda _event: self._ask_question())
-
-        self.text_output = tk.Text(self.frame, height=20, width=120, wrap=tk.WORD)
+        tk.Label(self.frame,text="Output Area:",font=("Arial", 12, "bold")).pack(anchor="w", padx=10, pady=(10, 0))
+        self.text_output = tk.Text(self.frame, height=15, width=120, wrap=tk.WORD,state=tk.DISABLED)
         self.text_output.pack(pady=10, padx=10)
-
         status = OllamaServerManager.get_model_status()
         self.status_label = tk.Label(
             self.frame, text=status.value, fg=STATUS_COLORS.get(status)
         )
         self.status_label.pack(pady=5)
-
         tk.Label(
             self.frame,
             text="⚙️ Chat Mode: Specialized for social network insights",
             fg="purple",
         ).pack(pady=5)
-
         tk.Button(
             self.frame,
             text="Ask Ollama",
@@ -55,7 +49,6 @@ class ChatModePage(PageBuilder):
             tk.Button(
                 self.frame, text="← Back to modes", command=app.show_selector
             ).pack(pady=5)
-
         return self.frame
 
     def set_question(self, question: str):
@@ -81,14 +74,18 @@ class ChatModePage(PageBuilder):
     def _ask_question(self):
         self.ask(self.entry.get())
 
+    def _set_output(self, text: str):
+        self.text_output.config(state=tk.NORMAL)
+        self.text_output.delete("1.0", tk.END)
+        self.text_output.insert(tk.END, text)
+        self.text_output.config(state=tk.DISABLED)
+    
+
     def _show_response(self, response, status: ModelStatus):
         if not self.frame.winfo_exists():
             return
         text = "The Ollama server is not running." if response is None else response
-        self.text_output.config(state=tk.NORMAL)
-        self.text_output.delete(1.0, tk.END)
-        self.text_output.insert(tk.END, text)
-        self.text_output.config(state=tk.DISABLED)
+        self._set_output(text)
         self.on_status(status)
         self.entry.delete(0, tk.END)
         logger.log("Answer shown.", self.mode_name)
