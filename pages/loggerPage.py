@@ -2,7 +2,7 @@ import tkinter as tk
 from tkinter import ttk
 
 from constants import LogSource
-from logger import logger
+from core.logger import logger
 
 
 class LoggerPage(tk.Toplevel):

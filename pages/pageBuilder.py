@@ -2,8 +2,8 @@ from abc import ABC, abstractmethod
 import threading
 
 from constants import ModelStatus
-from logger import logger
-from ollamaServerManager import OllamaServerManager
+from core.logger import logger
+from core.ollamaServerManager import OllamaServerManager
 
 
 class PageBuilder(ABC):
@@ -14,6 +14,8 @@ class PageBuilder(ABC):
     """
 
     mode_name = ""
+    # Window size the page wants, or None to keep whatever the window has.
+    geometry = None
 
     def ask(self, question: str) -> bool:
         """Ask the model in the background.
@@ -37,6 +39,14 @@ class PageBuilder(ABC):
             self.on_response(None, response)
         else:
             self.on_response(response, OllamaServerManager.get_model_status())
+
+    @abstractmethod
+    def build(self, app, parent=None):
+        """Build the page inside `parent` (app.container by default) and return it.
+
+        Called on the caller's thread. `parent` lets a page be embedded in
+        another page instead of filling the window on its own.
+        """
 
     @abstractmethod
     def on_status(self, status: ModelStatus):

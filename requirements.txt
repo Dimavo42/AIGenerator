@@ -1,2 +1,3 @@
 ollama
 python-dotenv
+yfinance

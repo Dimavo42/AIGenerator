@@ -1,0 +1,194 @@
+import threading
+import tkinter as tk
+from tkinter import ttk
+from constants import DEFAULT_TICKERS, LogSource, ModelStatus
+from core.logger import logger
+from pages.chatModePage import ChatModePage
+from pages.pageBuilder import PageBuilder
+from core.yfinanceApi import YFinanceApi
+
+
+class StocksTable(PageBuilder):
+    """The stocks half: the watchlist, as yfinance last saw it."""
+
+    mode_name = LogSource.STOCKS_MODE
+    COLUMNS = (
+        ("symbol", "Symbol", 90),
+        ("name", "Name", 200),
+        ("last", "Last", 80),
+        ("change", "Change %", 90),
+        ("currency", "Currency", 80),
+    )
+
+    def __init__(self, on_pick=None):
+        # The mode page passes a callback so a picked row can reach the chat.
+        self.on_pick = on_pick
+        self.symbols = list(DEFAULT_TICKERS)
+
+    def build(self, app, parent=None):
+        self.app = app
+        self.frame = tk.Frame(parent or app.container)
+        tk.Label(self.frame, text="Stocks (yfinance)", font=("Arial", 14, "bold")).pack(pady=(10, 5))
+        add_row = tk.Frame(self.frame)
+        add_row.pack(pady=5)
+        tk.Label(add_row, text="Symbol:").pack(side=tk.LEFT, padx=5)
+        self.symbol_entry = tk.Entry(add_row, width=12)
+        self.symbol_entry.pack(side=tk.LEFT, padx=5)
+        self.symbol_entry.bind("<Return>", lambda _event: self._add_symbol())
+        tk.Button(add_row, text="Add", command=self._add_symbol).pack(side=tk.LEFT, padx=5)
+        tk.Button(add_row, text="Remove", command=self._remove_symbol).pack(side=tk.LEFT, padx=5)
+        self.tree = ttk.Treeview(
+            self.frame, columns=[name for name, _, _ in self.COLUMNS], show="headings", height=15
+        )
+        for name, title, width in self.COLUMNS:
+            self.tree.heading(name, text=title)
+            self.tree.column(name, width=width, anchor=tk.W)
+        self.tree.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
+
+        self.api_status = tk.Label(self.frame, text="Not loaded yet.", fg="gray")
+        self.api_status.pack(pady=5)
+
+        buttons = tk.Frame(self.frame)
+        buttons.pack(pady=5)
+        tk.Button(buttons, text="Refresh", command=self.refresh).pack(side=tk.LEFT, padx=5)
+        if self.on_pick is not None:
+            tk.Button(buttons, text="Ask the model about it", command=self._pick).pack(
+                side=tk.LEFT, padx=5
+            )
+
+        self.refresh()
+        return self.frame
+
+    # ---- loading ----
+    def refresh(self):
+        """Reload the table in the background."""
+        self.api_status.config(text="Loading from yfinance...", fg="orange")
+        threading.Thread(target=self._refresh_worker, daemon=True).start()
+
+    def _refresh_worker(self):
+        rows = YFinanceApi.shared().get_quotes(self.symbols)
+        if self.frame.winfo_exists():
+            self.frame.after(0, self._show_rows, rows)
+
+    def _show_rows(self, rows):
+        if not self.frame.winfo_exists():
+            return
+        self.tree.delete(*self.tree.get_children())
+        if not rows:
+            self.api_status.config(text="No quotes came back - see the logger.", fg="red")
+            return
+        for row in rows:
+            self.tree.insert("", tk.END, values=[row[name] for name, _, _ in self.COLUMNS])
+        self.api_status.config(text=f"{len(rows)} symbols.", fg="green")
+
+    # ---- the watchlist ----
+    def _add_symbol(self):
+        symbol = self.symbol_entry.get().strip().upper()
+        if not symbol:
+            return
+        self.symbol_entry.delete(0, tk.END)
+        if symbol in self.symbols:
+            self.api_status.config(text=f"{symbol} is already on the list.", fg="orange")
+            return
+        self.symbols.append(symbol)
+        logger.log(f"Added {symbol} to the watchlist.", self.mode_name)
+        self.refresh()
+
+    def _remove_symbol(self):
+        """Drop the selected row from the watchlist."""
+        symbol = self._selected_symbol()
+        if symbol is None:
+            return
+        self.symbols.remove(symbol)
+        logger.log(f"Removed {symbol} from the watchlist.", self.mode_name)
+        self.refresh()
+
+    def _selected_symbol(self) -> str | None:
+        selection = self.tree.selection()
+        if not selection:
+            self.api_status.config(text="Pick a row first.", fg="orange")
+            return None
+        return self.tree.item(selection[0], "values")[0]
+
+    def _pick(self):
+        """Hand the selected symbol to whoever asked for it."""
+        symbol = self._selected_symbol()
+        if symbol is not None:
+            self.on_pick(symbol)
+
+    # ---- PageBuilder hooks ----
+    # This half never asks the model itself; the chat half does that.
+    def on_status(self, status: ModelStatus):
+        pass
+
+    def on_response(self, response: str | None, status: ModelStatus):
+        pass
+
+
+class StocksPage(PageBuilder):
+    """The stocks mode: a chat page and a stocks page sharing one window.
+
+    Both halves are ordinary pages - this one only puts them side by side and
+    turns a picked symbol into a question the model can actually answer.
+    """
+
+    mode_name = LogSource.STOCKS_MODE
+    # yfinance reads public data, so this mode needs no key at all.
+    geometry = "1200x700"
+
+    def build(self, app, parent=None):
+        self.app = app
+        self.frame = tk.Frame(parent or app.container)
+
+        header = tk.Frame(self.frame)
+        header.pack(fill=tk.X, pady=(8, 0), padx=10)
+        tk.Label(header, text=f"{self.mode_name}", font=("Arial", 16, "bold")).pack(side=tk.LEFT)
+        tk.Button(header, text="← Back to modes", command=app.show_selector).pack(side=tk.RIGHT)
+
+        split = tk.PanedWindow(self.frame, orient=tk.HORIZONTAL, sashwidth=6)
+        split.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+
+        self.chat_page = ChatModePage()
+        self.table_page = StocksTable(on_pick=self._ask_about)
+        split.add(self.chat_page.build(app, split))
+        split.add(self.table_page.build(app, split))
+
+        logger.log("Stocks mode opened with the chat and the stocks pages.", self.mode_name)
+        return self.frame
+
+    def _ask_about(self, symbol: str):
+        """Turn a picked symbol into a question waiting in the chat box.
+
+        Fetching the numbers blocks, so it happens off the Tk thread and the
+        box is filled once they are here.
+        """
+        self.chat_page.set_question(f"Fetching {symbol} from yfinance...")
+        threading.Thread(target=self._ask_about_worker, args=(symbol,), daemon=True).start()
+
+    def _ask_about_worker(self, symbol: str):
+        summary = YFinanceApi.shared().get_summary(symbol)
+        if self.frame.winfo_exists():
+            self.frame.after(0, self._show_question, symbol, summary)
+
+    def _show_question(self, symbol: str, summary: str | None):
+        if not self.frame.winfo_exists():
+            return
+        if summary is None:
+            self.chat_page.set_question(f"What should I know about the stock {symbol}?")
+            logger.log(f"No yfinance data for {symbol} - asked without it.", self.mode_name)
+            return
+        self.chat_page.set_question(
+            "Here is live market data from yfinance:\n"
+            f"{summary}\n"
+            f"Explain in plain words how {symbol} is doing right now, what stands out "
+            "in these numbers, and what a private investor should watch next. "
+            "Use only the data above and say when something is not in it."
+        )
+
+    # ---- PageBuilder hooks ----
+    # The mode page never asks on its own - the chat half owns the conversation.
+    def on_status(self, status: ModelStatus):
+        self.chat_page.on_status(status)
+
+    def on_response(self, response: str | None, status: ModelStatus):
+        self.chat_page.on_response(response, status)

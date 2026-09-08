@@ -1,6 +1,6 @@
 import threading
 from collections import deque
-from datetime import datetime, timedelta
+from datetime import datetime
 from constants import LogSource
 
 
@@ -30,16 +30,6 @@ class Logger:
             if logs is None:
                 return []
             return [message for _,message in logs]
-
-    def get_logs_by_time_frame(self,seconds,instance_name = None):
-        if instance_name is None:
-            instance_name = LogSource.GLOBAL
-        cut_time = datetime.now() - timedelta(seconds=seconds)
-        with self._lock:
-            logs = self._logs.get(instance_name)
-            if logs is None:
-                return []
-            return [message for timestamp,message in logs if timestamp >= cut_time]
 
     def get_all_logs(self):
         logs = []

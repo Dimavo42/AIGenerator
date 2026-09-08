@@ -1,8 +1,8 @@
 
 import threading
-from constants import ModelStatus, ServerStatus
-from logger import logger
-from ollamaServer import OllamaServer
+from constants import ModelStatus
+from core.logger import logger
+from core.ollamaServer import OllamaServer
 
 
 class OllamaServerManager:
@@ -42,12 +42,6 @@ class OllamaServerManager:
         if cls._ollama_instance is None:
             return ModelStatus.NOT_LOADED
         return cls._ollama_instance.get_model_status()
-
-    @classmethod
-    def get_server_status(cls) -> ServerStatus:
-        if cls._ollama_instance is None:
-            return ServerStatus.NOT_RUNNING
-        return cls._ollama_instance.get_server_status()
 
     @classmethod
     def get_model(cls) -> str | None:

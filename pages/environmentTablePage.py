@@ -1,4 +1,4 @@
-from logger import logger
+from core.logger import logger
 import tkinter as tk
 from constants import LogSource
 from scripts.environment import Environment

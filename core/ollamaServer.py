@@ -3,7 +3,7 @@ import subprocess
 import time
 import socket
 from constants import MODELS, LogSource, ServerStatus, ModelStatus
-from logger import logger
+from core.logger import logger
 
 
 class OllamaServer:
@@ -13,9 +13,6 @@ class OllamaServer:
         self.model_status = ModelStatus.NOT_LOADED
         self.server_process = None
 
-    def get_server_status(self):
-        return self.server_status
-    
     def get_model_status(self):
         return self.model_status
 
@@ -146,10 +143,6 @@ class OllamaServer:
         self.model = previous_model
         self.model_status = previous_status
         return ModelStatus.ERROR
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        """Context manager cleanup"""
-        self.stop_server()
 
 
 

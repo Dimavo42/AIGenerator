@@ -23,6 +23,32 @@ if errorlevel 1 (
 )
 
 echo Python is installed.
+
+echo Checking for Ollama installation...
+
+ollama --version >nul 2&1
+if errorlevel 1 (
+
+    echo Ollama is not installed.
+    echo Installing Ollama...
+
+    winget install --id Ollama.Ollama -e --accept-package-agreements --accept-source-agreements
+
+    if errorlevel 1 (
+        echo Failed to install Ollama.
+        pause
+        exit /b 1
+    )
+
+    echo Ollama installed successfully.
+    echo Please restart the script to continue.
+    pause
+    exit /b 0
+)
+echo Ollama is installed.
+
+
+
 echo verifying virtual environment...
 if not exist ".venv" (
     echo Creating python virtual environment...

@@ -10,17 +10,19 @@ MODELS = ["richardyoung/qwen2.5-coder-14b-instruct-abliterated"
             ,"dolphin-phi"]
 
 
-class LogSource(str, Enum):
-    """Log bucket names. Also used as Tk widget text, hence the __str__ below."""
+DEFAULT_TICKERS = ["AAPL", "MSFT", "NVDA", "GOOGL", "AMZN", "TSLA", "META", "^GSPC"]
 
+
+class LogSource(str, Enum):
     GLOBAL = "global"
     ALL_SOURCES = "all"
     SERVER = "server"
     ENVIRONMENT = "Environment"
     CHAT_MODE = "Chat Mode"
+    STOCKS_MODE = "Stocks"
+    YFINANCE_API = "yfinance Api"
 
     def __str__(self):
-        # Enum.__str__ would render "LogSource.CHAT_MODE"; widgets need "Chat Mode".
         return self.value
 
 

@@ -1,6 +1,6 @@
 import threading
-from clientManager import ClientManager
-from ollamaServerManager import OllamaServerManager
+from core.clientManager import ClientManager
+from core.ollamaServerManager import OllamaServerManager
 
 
 def main():

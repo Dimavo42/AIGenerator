@@ -12,16 +12,7 @@ class Environment:
       return os.path.exists(output_file_path or cls.ENVIRONMENT_PATH)
 
    @classmethod
-   def write_to_file(cls, key,value):
-      if not cls.is_file_created():
-         cls.create_enviorment_file()
-      cls._enviorment_keys[key] = value
-      with open(cls.ENVIRONMENT_PATH, "a") as file:
-         file.write(f"{key}={value}\n")
-
-   @classmethod
    def save_all(cls, values):
-      """Rewrite the whole file from a key -> value mapping (blank keys dropped)."""
       cls._enviorment_keys = {k.strip(): v for k, v in values.items() if k.strip()}
       with open(cls.ENVIRONMENT_PATH, "w") as file:
          for key, value in cls._enviorment_keys.items():
@@ -44,10 +35,6 @@ class Environment:
    @classmethod
    def create_enviorment_file(cls):
       Path(cls.ENVIRONMENT_PATH).touch()
-
-   @classmethod
-   def get_enviorment_key(cls,key):
-      return cls._enviorment_keys.get(key)
 
    @classmethod
    def get_all_enviorment(cls):

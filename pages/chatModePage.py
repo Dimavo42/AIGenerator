@@ -1,8 +1,8 @@
 import tkinter as tk
 
 from constants import STATUS_COLORS, LogSource, ModelStatus
-from logger import logger
-from ollamaServerManager import OllamaServerManager
+from core.logger import logger
+from core.ollamaServerManager import OllamaServerManager
 from pages.pageBuilder import PageBuilder
 
 
@@ -11,10 +11,12 @@ class ChatModePage(PageBuilder):
 
     mode_name = LogSource.CHAT_MODE
 
-    def build(self, app):
-        """Build the page inside `app.container` and return its frame."""
+    def build(self, app, parent=None):
+        """Build the page inside `parent` (app.container by default)."""
         self.app = app
-        self.frame = tk.Frame(app.container)
+        # Embedded in another page: that page owns the navigation.
+        self.is_embedded = parent is not None
+        self.frame = tk.Frame(parent or app.container)
 
         tk.Label(
             self.frame, text=f"Welcome to {self.mode_name}", font=("Arial", 16, "bold")
@@ -27,7 +29,7 @@ class ChatModePage(PageBuilder):
         self.entry.pack(side=tk.LEFT, padx=5)
         self.entry.bind("<Return>", lambda _event: self._ask_question())
 
-        self.text_output = tk.Text(self.frame, height=10, width=70, wrap=tk.WORD)
+        self.text_output = tk.Text(self.frame, height=20, width=120, wrap=tk.WORD)
         self.text_output.pack(pady=10, padx=10)
 
         status = OllamaServerManager.get_model_status()
@@ -44,16 +46,23 @@ class ChatModePage(PageBuilder):
 
         tk.Button(
             self.frame,
-            text="Ask Qwen",
+            text="Ask Ollama",
             command=self._ask_question,
             bg="blue",
             fg="white",
         ).pack(pady=10)
-        tk.Button(
-            self.frame, text="← Back to modes", command=app.show_selector
-        ).pack(pady=5)
+        if not self.is_embedded:
+            tk.Button(
+                self.frame, text="← Back to modes", command=app.show_selector
+            ).pack(pady=5)
 
         return self.frame
+
+    def set_question(self, question: str):
+        """Put a question in the box for the user to send (or edit first)."""
+        self.entry.delete(0, tk.END)
+        self.entry.insert(0, question)
+        self.entry.focus_set()
 
     # ---- PageBuilder hooks ----
     def on_status(self, status: ModelStatus):

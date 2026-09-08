@@ -1,21 +1,27 @@
 import threading
 import tkinter as tk
 from tkinter import ttk
-from constants import MODELS, STATUS_COLORS, ModelStatus
-from logger import logger
-from ollamaServerManager import OllamaServerManager
+from constants import  STATUS_COLORS, ModelStatus
+from core.logger import logger
+from core.ollamaServerManager import OllamaServerManager
 from pages.chatModePage import ChatModePage
 from pages.environmentTablePage import EnvironmentTablePage
 from pages.loggerPage import LoggerPage
+from pages.modelPopUpAdder import ModelPopUpAdder
+from pages.stocksPage import StocksPage
 from scripts.environment import Environment
+from scripts.modelsManager import ModelsManager
 
 
 class ClientManager:
     """Owns the single window and builds every page in it on demand."""
 
-    MODES = {
+    _MODES = {
         "ChatMode": ChatModePage,
+        "Stocks": StocksPage
     }
+    _data = Environment.get_all_enviorment()
+    _models_manager = ModelsManager()
 
     def __init__(self):
         self.root = tk.Tk()
@@ -24,14 +30,16 @@ class ClientManager:
         self.container = tk.Frame(self.root)
         self.container.pack(fill=tk.BOTH, expand=True)
         self.current_page = None
-        # Kept on the instance so the vars outlive the selector frame.
-        self.model_vars = {
-            mode_name: tk.StringVar(value=MODELS[0]) for mode_name in self.MODES
-        }
-        logger.log("GUI started.")
         # Side windows are built lazily and only ever exist one at a time.
         self.logger_instance = None
         self.environment_generator_instance = None
+        self.model_pop_up_adder_instance = None
+        self._models = self._models_manager.get_all_models()
+        self._models_manager.subscribe(self._on_models_changed)
+         # Kept on the instance so the vars outlive the selector frame.
+        self.model_vars = { mode_name: tk.StringVar(value=self._models[0]) for mode_name in self._MODES }
+        self.model_comboboxes = {}
+        logger.log("GUI started.")
         self.show_selector()
 
     # ---- page swapping ----
@@ -44,34 +52,40 @@ class ClientManager:
 
     def show_selector(self):
         """Show the mode-selection page."""
+        # A mode may have grown the window; the selector is small again.
+        self.root.geometry("600x500")
+        self.model_comboboxes.clear()
         frame = tk.Frame(self.container)
         tk.Label(frame, text="Select Mode", font=("Arial", 18, "bold")).pack(pady=20)
         buttons = tk.Frame(frame)
         buttons.pack(pady=20)
-        for index, (mode_name, builder_class) in enumerate(self.MODES.items()):
+        for index, (mode_name, builder_class) in enumerate(self._MODES.items()):
             tk.Button(
                 buttons,
                 text=f"Open {mode_name}",
                 width=20,
-                command=lambda n=mode_name, b=builder_class: self.open_mode(n, b),
+                command=lambda n=mode_name, b=builder_class: self.load_model(n, b),
                 bg="lightblue",
                 font=("Arial", 12),
             ).grid(row=index, column=0, pady=5)
-            ttk.Combobox(
+            combo = ttk.Combobox(
                 buttons,
                 textvariable=self.model_vars[mode_name],
-                values=MODELS,
+                values=self._models,
                 state="readonly",
                 width=30,
-            ).grid(row=index, column=1, padx=10)
+            )
+            combo.grid(row=index, column=1, padx=10)
+            self.model_comboboxes[mode_name] = combo
         tk.Button(frame, text="Show Logger", command=self.show_logger).pack(pady=(20, 5))
         tk.Button(
             frame, text="Environment Generator", command=self.show_environment_generator
         ).pack(pady=5)
+        tk.Button(frame, text="Add Model",command=self.show_add_model).pack(pady=5)
         self._swap_page(frame, "Ollama - Mode Selector")
 
-    # ---- opening a mode ----
-    def open_mode(self, mode_name, builder_class):
+    # ---- loading the model ----
+    def load_model(self, mode_name, builder_class):
         """Load the model picked for this mode, then show the mode page."""
         selected_model = self.model_vars[mode_name].get()
         logger.log(f"Opening {mode_name} with {selected_model}.", builder_class.mode_name)
@@ -95,7 +109,7 @@ class ClientManager:
         threading.Thread(target=worker, daemon=True).start()
 
     def show_loading(self, model_name):
-        """Busy page shown while a model is downloading / loading."""
+        """Busy page with a spinning bar, shown while a model loads."""
         frame = tk.Frame(self.container)
         tk.Label(frame, text=f"Loading {model_name}", font=("Arial", 14, "bold")).pack(
             pady=(120, 5)
@@ -140,6 +154,9 @@ class ClientManager:
     def show_mode(self, page_class):
         """Build a mode page and swap it in."""
         page = page_class()
+        if page_class.geometry:
+            # A mode that holds more than one page asks for a bigger window.
+            self.root.geometry(page_class.geometry)
         frame = page.build(self)
         self._swap_page(frame, str(page.mode_name))
         return frame
@@ -165,13 +182,24 @@ class ClientManager:
 
     def show_environment_generator(self):
         """Open the environment window, or raise the one that is already open."""
-        data = Environment.get_all_enviorment()
-        if not data:
-            data = {key: "" for key in self.MODES}
         return self._open_window(
             "environment_generator_instance",
-            lambda on_close: EnvironmentTablePage(self.root, data, on_close=on_close),
+            lambda on_close: EnvironmentTablePage(self.root, self._data, on_close=on_close),
         )
+
+    def show_add_model(self):
+        """Open the model add window, or raise the one that is already open."""
+        return self._open_window(
+            "model_pop_up_adder_instance",
+            lambda on_close: ModelPopUpAdder(self.root,self._models_manager,on_close=on_close),
+        )
+
+    # ---- subscriptions ----
+    def _on_models_changed(self,models):
+        self._models = models
+        for combo in self.model_comboboxes.values():
+             if combo.winfo_exists():
+                combo["values"] = models
 
     def run(self):
         self.root.mainloop()
