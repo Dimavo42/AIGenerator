@@ -1,7 +1,9 @@
 from enum import Enum
 
+from theme import Theme
 
-MODELS = ["richardyoung/qwen2.5-coder-14b-instruct-abliterated"
+
+MODELS =["richardyoung/qwen2.5-coder-14b-instruct-abliterated"
           ,"thomboe/dolphin3.0-llama3.1-8b-abliterated"
             ,"R4C3R/gemma-3-12b-it-heretic"
             ,"igorls/gemma-4-12B-it-qat-q4_0-unquantized-heretic"
@@ -51,7 +53,9 @@ STOCKS_CHART_POPUP_PERIODS = {
     }
 
 STOCKS_CHART_POPUP_PEN_WIDTH = 2
-STOCKS_CHART_POPUP_PEN_COLOR = "red"
+STOCKS_CHART_POPUP_PEN_COLOR = Theme.DANGER
+# The price line itself, drawn on the dark chart background.
+STOCKS_CHART_POPUP_LINE_COLOR = Theme.ACCENT
 
 STOCKS_CHART_POPUP_PEN_INTERVALS = [
         "1d",
@@ -134,14 +138,14 @@ class ModelStatus(str,Enum):
         return self.value
 
 STATUS_COLORS = {
-    ModelStatus.NOT_LOADED: "red",
-    ModelStatus.LOADING: "orange",
-    ModelStatus.LOADED: "green",
-    ModelStatus.GENERATING: "blue",
-    ModelStatus.ERROR: "red",
-    ServerStatus.NOT_RUNNING: "red",
-    ServerStatus.STARTING: "orange",
-    ServerStatus.RUNNING: "green",
-    ServerStatus.ERROR: "red",
+    ModelStatus.NOT_LOADED: Theme.DANGER,
+    ModelStatus.LOADING: Theme.WARNING,
+    ModelStatus.LOADED: Theme.SUCCESS,
+    ModelStatus.GENERATING: Theme.INFO,
+    ModelStatus.ERROR: Theme.DANGER,
+    ServerStatus.NOT_RUNNING: Theme.DANGER,
+    ServerStatus.STARTING: Theme.WARNING,
+    ServerStatus.RUNNING: Theme.SUCCESS,
+    ServerStatus.ERROR: Theme.DANGER,
 }
 

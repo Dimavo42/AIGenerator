@@ -8,6 +8,7 @@ from core.yfinanceApi import YFinanceApi
 from pages.pageBuilder import PageBuilder
 from pages.stocksPage import StockChartPopup, StocksPage
 from scripts.environment import Environment
+from theme import Theme
 
 
 class JournalTable(PageBuilder):
@@ -25,33 +26,39 @@ class JournalTable(PageBuilder):
 
     def build(self, app, parent=None):
         self.app = app
-        self.frame = tk.Frame(parent or app.container)
-        tk.Label(self.frame, text="Journal (yfinance)", font=("Arial", 14, "bold")).pack(pady=(10, 5))
+        self.frame = tk.Frame(parent or app.container, **(Theme.CARD if parent is not None else {}))
+        Theme.heading(self.frame, "Journal (yfinance)").pack(anchor="w", padx=14, pady=(14, 2))
+        Theme.hint(self.frame, "Double click a row to edit the entry behind it.").pack(anchor="w", padx=14)
         add_row = tk.Frame(self.frame)
-        add_row.pack(pady=5)
-        tk.Label(add_row, text="Symbol:").pack(side=tk.LEFT, padx=5)
+        add_row.pack(fill=tk.X, padx=14, pady=(12, 6))
+        tk.Label(add_row, text="Symbol", fg=Theme.TEXT_MUTED, font=Theme.FONT_BOLD).pack(side=tk.LEFT, padx=(0, 8))
         self.symbol_entry = tk.Entry(add_row, width=12)
-        self.symbol_entry.pack(side=tk.LEFT, padx=5)
+        self.symbol_entry.pack(side=tk.LEFT)
         self.symbol_entry.bind("<Return>", lambda _event: self._add_to_journal())
-        tk.Button(add_row, text="Add to journal", command=self._add_to_journal).pack(side=tk.LEFT, padx=5)
-        tk.Button(add_row, text="Remove from journal", command=self._remove_from_journal).pack(side=tk.LEFT, padx=5)
+        tk.Button(add_row, text="Add", command=self._add_to_journal, **Theme.PRIMARY_BUTTON).pack(side=tk.LEFT, padx=(8, 4))
+        tk.Button(add_row, text="Remove", command=self._remove_from_journal).pack(side=tk.LEFT)
         self.tree = ttk.Treeview(self.frame, columns=[name for name, _, _ in self.COLUMNS], show="headings", height=15)
         for name, title, width in self.COLUMNS:
             self.tree.heading(name, text=title)
             self.tree.column(name, width=width, anchor=tk.W)
-        self.tree.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
+        self.tree.pack(fill=tk.BOTH, expand=True, padx=14, pady=8)
         self.tree.bind("<Double-1>", self._on_double_click)
-        self.api_status = tk.Label(self.frame, text=ModelStatus.LOADING, fg=STATUS_COLORS[ModelStatus.LOADING])
-        self.api_status.pack(pady=5)
-        buttons = tk.Frame(self.frame)
-        buttons.pack(pady=5)
-        tk.Button(buttons, text="Refresh", command=self.refresh).pack(side=tk.LEFT, padx=5)
-        tk.Button(buttons, text="Edit", command=self._edit_selected).pack(side=tk.LEFT, padx=5)
+        # A row is read for its profit, so the profit is what colors it.
+        self.tree.tag_configure("gain", foreground=Theme.SUCCESS)
+        self.tree.tag_configure("loss", foreground=Theme.DANGER)
+        footer = tk.Frame(self.frame)
+        footer.pack(fill=tk.X, padx=14, pady=(0, 12))
+        self.api_status = tk.Label(footer, text=ModelStatus.LOADING, fg=STATUS_COLORS[ModelStatus.LOADING], font=Theme.FONT_BOLD)
+        self.api_status.pack(side=tk.LEFT)
+        buttons = tk.Frame(footer)
+        buttons.pack(side=tk.RIGHT)
+        tk.Button(buttons, text="Refresh", command=self.refresh).pack(side=tk.LEFT, padx=4)
+        tk.Button(buttons, text="Edit", command=self._edit_selected).pack(side=tk.LEFT, padx=4)
         # Double click edits now, so the chart needs a button of its own.
-        tk.Button(buttons, text="Chart", command=self._chart_selected).pack(side=tk.LEFT, padx=5)
+        tk.Button(buttons, text="Chart", command=self._chart_selected).pack(side=tk.LEFT, padx=4)
         if self.on_pick is not None:
             tk.Button(buttons, text="Ask the model about it", command=self._pick).pack(
-                side=tk.LEFT, padx=5
+                side=tk.LEFT, padx=4
             )
 
         self.refresh()
@@ -84,7 +91,13 @@ class JournalTable(PageBuilder):
             row = self._row(entry, quotes.get(entry["symbol"]))
             # The row id is where the entry sits in the journal, so a picked
             # row leads straight back to the entry behind it.
-            self.tree.insert("", tk.END, iid=str(index), values=[row[name] for name, _, _ in self.COLUMNS])
+            self.tree.insert(
+                "",
+                tk.END,
+                iid=str(index),
+                values=[row[name] for name, _, _ in self.COLUMNS],
+                tags=self._tags(row["profit"]),
+            )
         missing = len(self.entries) - len(quotes)
         if missing:
             self.api_status.config(
@@ -105,6 +118,16 @@ class JournalTable(PageBuilder):
             "date": entry.get("date", ""),
             "profit": self._profit(entry.get("begin_price"), price_now),
         }
+
+    @staticmethod
+    def _tags(profit: str) -> tuple:
+        """Green for a row that is up, red for one that is down, plain for neither."""
+        if profit.startswith("+") and float(profit) > 0:
+            return ("gain",)
+        if profit.startswith("-"):
+            return ("loss",)
+        # Flat, or no quote at all: the row stays the color the table is.
+        return ()
 
     @staticmethod
     def _profit(begin_price, price_now) -> str:
@@ -241,25 +264,28 @@ class JournalEntryEditPopup(tk.Toplevel):
         self.entry = entry
         self.on_save = on_save
         self.title(f"Edit {entry['symbol']}")
-        self.geometry("420x260")
+        self.geometry("440x300")
+        self.configure(bg=Theme.BG)
         self.transient(parent)
-        tk.Label(self, text="Edit journal entry", font=("Arial", 14, "bold")).pack(pady=(10, 5))
+        Theme.heading(self, "Edit journal entry").pack(anchor="w", padx=18, pady=(16, 10))
         fields = tk.Frame(self)
-        fields.pack(fill=tk.X, padx=15, pady=5)
+        fields.pack(fill=tk.X, padx=18)
         fields.columnconfigure(1, weight=1)
         self.entries = {}
         for row, (name, title) in enumerate(self.FIELDS):
-            tk.Label(fields, text=f"{title}:").grid(row=row, column=0, sticky=tk.W, pady=4)
+            tk.Label(fields, text=title, fg=Theme.TEXT_MUTED, font=Theme.FONT_SMALL).grid(
+                row=row, column=0, sticky=tk.W, pady=5
+            )
             box = tk.Entry(fields)
             box.insert(0, str(entry.get(name, "")))
-            box.grid(row=row, column=1, sticky="ew", padx=(10, 0), pady=4)
+            box.grid(row=row, column=1, sticky="ew", padx=(12, 0), pady=5)
             box.bind("<Return>", lambda _event: self._save())
             self.entries[name] = box
-        self.error_label = tk.Label(self, text="", fg=STATUS_COLORS[ModelStatus.ERROR])
-        self.error_label.pack(pady=5)
+        self.error_label = tk.Label(self, text="", fg=STATUS_COLORS[ModelStatus.ERROR], font=Theme.FONT_SMALL)
+        self.error_label.pack(pady=8)
         buttons = tk.Frame(self)
-        buttons.pack(pady=10)
-        tk.Button(buttons, text="Save", width=10, command=self._save).pack(side=tk.LEFT, padx=5)
+        buttons.pack(pady=(4, 14))
+        tk.Button(buttons, text="Save", width=10, command=self._save, **Theme.PRIMARY_BUTTON).pack(side=tk.LEFT, padx=5)
         tk.Button(buttons, text="Cancel", width=10, command=self.destroy).pack(side=tk.LEFT, padx=5)
 
     def _save(self):

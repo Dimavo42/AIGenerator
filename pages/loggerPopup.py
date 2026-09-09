@@ -2,6 +2,7 @@ import tkinter as tk
 from tkinter import ttk
 from constants import LogSource
 from core.logger import Logger
+from theme import Theme
 
 
 class LoggerPopup(tk.Toplevel):
@@ -11,20 +12,27 @@ class LoggerPopup(tk.Toplevel):
         super().__init__(parent)
         self.on_close = on_close
         self.title("Logger")
-        self.geometry("700x400")
+        self.geometry("760x440")
+        self.configure(bg=Theme.BG)
         controls = tk.Frame(self)
-        controls.pack(fill=tk.X, padx=5, pady=5)
-        tk.Label(controls, text="Source:").pack(side=tk.LEFT)
+        controls.pack(fill=tk.X, padx=14, pady=12)
+        tk.Label(controls, text="Source", fg=Theme.TEXT_MUTED, font=Theme.FONT_BOLD).pack(
+            side=tk.LEFT, padx=(0, 8)
+        )
         self.source_var = tk.StringVar(value=LogSource.ALL_SOURCES)
         self.source_box = ttk.Combobox(
             controls, textvariable=self.source_var, state="readonly", width=50
         )
-        self.source_box.pack(side=tk.LEFT, padx=5)
+        self.source_box.pack(side=tk.LEFT)
         self.protocol("WM_DELETE_WINDOW", self._close)
-        scrollbar = tk.Scrollbar(self)
+        # The log and its scrollbar sit together so the padding wraps both.
+        body = tk.Frame(self)
+        body.pack(fill=tk.BOTH, expand=True, padx=14, pady=(0, 14))
+        # ttk's scrollbar is the one that takes the theme on Windows.
+        scrollbar = ttk.Scrollbar(body)
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
         self.logger_text = tk.Text(
-            self, wrap=tk.WORD, state=tk.DISABLED, yscrollcommand=scrollbar.set
+            body, wrap=tk.WORD, state=tk.DISABLED, yscrollcommand=scrollbar.set
         )
         self.logger_text.pack(fill=tk.BOTH, expand=True)
         scrollbar.config(command=self.logger_text.yview)

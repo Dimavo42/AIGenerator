@@ -3,6 +3,7 @@ from constants import STATUS_COLORS, LogSource, ModelStatus
 from core.logger import Logger
 from core.ollamaServerManager import OllamaServerManager
 from pages.pageBuilder import PageBuilder
+from theme import Theme
 
 
 class ChatModePage(PageBuilder):
@@ -15,38 +16,41 @@ class ChatModePage(PageBuilder):
         self.app = app
         # Embedded in another page: that page owns the navigation.
         self.is_embedded = parent is not None
-        self.frame = tk.Frame(parent or app.container)
-        tk.Label(self.frame, text=f"Welcome to {self.mode_name}", font=("Arial", 16, "bold")).pack(pady=10)
+        # On its own the page is the window; inside another page it is a panel.
+        self.frame = tk.Frame(parent or app.container, **(Theme.CARD if self.is_embedded else {}))
+        Theme.heading(self.frame, f"Welcome to {self.mode_name}").pack(
+            anchor="w", padx=14, pady=(14, 2)
+        )
+        Theme.hint(
+            self.frame, "⚙️ Chat Mode: Specialized for social network insights"
+        ).pack(anchor="w", padx=14)
         input_row = tk.Frame(self.frame)
-        input_row.pack(pady=10)
-        tk.Label(input_row, text="Question:").pack(side=tk.LEFT, padx=5)
-        self.entry = tk.Entry(input_row, width=50)
-        self.entry.pack(side=tk.LEFT, padx=5)
+        input_row.pack(fill=tk.X, padx=14, pady=(14, 6))
+        tk.Label(input_row, text="Question", fg=Theme.TEXT_MUTED, font=Theme.FONT_BOLD).pack(
+            side=tk.LEFT, padx=(0, 8)
+        )
+        self.entry = tk.Entry(input_row)
+        self.entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
         self.entry.bind("<Return>", lambda _event: self._ask_question())
-        tk.Label(self.frame,text="Output Area:",font=("Arial", 12, "bold")).pack(anchor="w", padx=10, pady=(10, 0))
-        self.text_output = tk.Text(self.frame, height=15, width=120, wrap=tk.WORD,state=tk.DISABLED)
-        self.text_output.pack(pady=10, padx=10)
+        tk.Button(
+            input_row, text="Ask Ollama", command=self._ask_question, **Theme.PRIMARY_BUTTON
+        ).pack(side=tk.LEFT, padx=(8, 0))
+        tk.Label(self.frame, text="Answer", fg=Theme.TEXT_MUTED, font=Theme.FONT_BOLD).pack(
+            anchor="w", padx=14, pady=(10, 4)
+        )
+        self.text_output = tk.Text(self.frame, height=12, wrap=tk.WORD, state=tk.DISABLED)
+        self.text_output.pack(fill=tk.BOTH, expand=True, padx=14, pady=(0, 10))
+        footer = tk.Frame(self.frame)
+        footer.pack(fill=tk.X, padx=14, pady=(0, 12))
         status = OllamaServerManager.get_model_status()
         self.status_label = tk.Label(
-            self.frame, text=status.value, fg=STATUS_COLORS.get(status)
+            footer, text=status.value, fg=STATUS_COLORS.get(status), font=Theme.FONT_BOLD
         )
-        self.status_label.pack(pady=5)
-        tk.Label(
-            self.frame,
-            text="⚙️ Chat Mode: Specialized for social network insights",
-            fg="purple",
-        ).pack(pady=5)
-        tk.Button(
-            self.frame,
-            text="Ask Ollama",
-            command=self._ask_question,
-            bg="blue",
-            fg="white",
-        ).pack(pady=10)
+        self.status_label.pack(side=tk.LEFT)
         if not self.is_embedded:
-            tk.Button(
-                self.frame, text="← Back to modes", command=app.show_selector
-            ).pack(pady=5)
+            tk.Button(footer, text="← Back to modes", command=app.show_selector).pack(
+                side=tk.RIGHT
+            )
         return self.frame
 
     def set_question(self, question: str):

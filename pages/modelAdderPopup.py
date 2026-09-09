@@ -2,6 +2,7 @@ from tkinter import messagebox
 import tkinter as tk
 import webbrowser
 from constants import OLLAMA_LIBRARY_URL
+from theme import Theme
 
 
 class ModelAdderPopup(tk.Toplevel):
@@ -11,25 +12,26 @@ class ModelAdderPopup(tk.Toplevel):
         self.models_manager = models_manager
         self.on_close = on_close
         self.title("Add new model")
-        self.geometry("650x400")
+        self.geometry("650x430")
+        self.configure(bg=Theme.BG)
         self.protocol("WM_DELETE_WINDOW", self._close)
         self.window = tk.Frame(self)
         self.window.pack(fill=tk.BOTH, expand=True)
-        tk.Label(self.window,text="Current Models",font=("Arial", 14, "bold")).pack(pady=(10, 5))
+        Theme.heading(self.window,"Current Models").pack(anchor=tk.W,padx=15,pady=(16, 2))
         link_frame = tk.Frame(self.window)
-        link_frame.pack(pady=(0, 0))
-        tk.Label(link_frame,text="Open Ollama Library to see all models: ",font=("Arial", 10)).pack(side=tk.LEFT)
-        link = tk.Label(link_frame,text=OLLAMA_LIBRARY_URL,fg="blue",cursor="hand2",font=("Arial", 10, "underline"))
+        link_frame.pack(anchor=tk.W,padx=15)
+        Theme.hint(link_frame,"Open the Ollama library to see all models: ").pack(side=tk.LEFT)
+        link = tk.Label(link_frame,text=OLLAMA_LIBRARY_URL,fg=Theme.INFO,cursor="hand2",font=(*Theme.FONT_SMALL, "underline"))
         link.pack(side=tk.LEFT)
         link.bind("<Button-1>", self.open_library)
-        tk.Label(self.window,text="Paste the model name into the box below and click Add Model",font=("Arial", 10)).pack(pady=(0, 10))
+        Theme.hint(self.window,"Paste the model name into the box below and click Add Model.").pack(anchor=tk.W,padx=15,pady=(2, 0))
         self.models_list = tk.Listbox(self.window,width=80,height=12)
-        self.models_list.pack(padx=15,pady=5,fill=tk.BOTH,expand=True)
+        self.models_list.pack(padx=15,pady=12,fill=tk.BOTH,expand=True)
         add_frame = tk.Frame(self.window)
-        add_frame.pack(fill=tk.X,padx=15,pady=10)
+        add_frame.pack(fill=tk.X,padx=15,pady=(0, 15))
         self.model_entry = tk.Entry(add_frame)
         self.model_entry.pack(side=tk.LEFT,fill=tk.X,expand=True,padx=(0, 10))
-        tk.Button(add_frame,text="Add Model",width=15,command=self.add_model
+        tk.Button(add_frame,text="Add Model",width=15,command=self.add_model,**Theme.PRIMARY_BUTTON
         ).pack(side=tk.RIGHT)
         self.models_manager.subscribe(self.update_models)
         self.update_models(self.models_manager.get_all_models())

@@ -12,6 +12,7 @@ from pages.modelAdderPopup import ModelAdderPopup
 from pages.stocksPage import StocksPage
 from scripts.environment import Environment
 from scripts.modelsManager import ModelsManager
+from theme import Theme
 
 
 class ClientManager:
@@ -27,6 +28,9 @@ class ClientManager:
     def __init__(self):
         self.root = tk.Tk()
         self.root.geometry("600x500")
+        self.root.minsize(520, 460)
+        # Every widget built from here on picks its colors up from this.
+        Theme.apply(self.root)
         # Closing the window is what ends the program, so it is what saves it.
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
         # Every page is packed into this container; only one lives at a time.
@@ -70,18 +74,22 @@ class ClientManager:
         self.root.geometry("600x500")
         self.model_comboboxes.clear()
         frame = tk.Frame(self.container)
-        tk.Label(frame, text="Select Mode", font=("Arial", 18, "bold")).pack(pady=20)
-        buttons = tk.Frame(frame)
-        buttons.pack(pady=20)
+        # The page has little on it, so what there is sits in the middle.
+        body = tk.Frame(frame)
+        body.pack(expand=True)
+        Theme.title(body, "Select Mode").pack(pady=(0, 4))
+        Theme.hint(body, "Pick a mode and the model it should run with.").pack()
+        buttons = tk.Frame(body)
+        buttons.pack(pady=24)
+        buttons.columnconfigure(1, weight=1)
         for index, (mode_name, builder_class) in enumerate(self._MODES.items()):
             tk.Button(
                 buttons,
                 text=f"Open {mode_name}",
-                width=20,
+                width=18,
                 command=lambda n=mode_name, b=builder_class: self.load_model(n, b),
-                bg="lightblue",
-                font=("Arial", 12),
-            ).grid(row=index, column=0, pady=5)
+                **Theme.PRIMARY_BUTTON,
+            ).grid(row=index, column=0, pady=6, sticky="ew")
             combo = ttk.Combobox(
                 buttons,
                 textvariable=self.model_vars[mode_name],
@@ -89,13 +97,17 @@ class ClientManager:
                 state="readonly",
                 width=30,
             )
-            combo.grid(row=index, column=1, padx=10)
+            combo.grid(row=index, column=1, padx=12, sticky="ew")
             self.model_comboboxes[mode_name] = combo
-        tk.Button(frame, text="Show Logger", command=self.show_logger).pack(pady=(20, 5))
-        tk.Button(
-            frame, text="Environment Generator", command=self.show_environment_generator
-        ).pack(pady=5)
-        tk.Button(frame, text="Add Model",command=self.show_add_model).pack(pady=5)
+        Theme.separator(body).pack(fill=tk.X, padx=60, pady=(4, 18))
+        tools = tk.Frame(body)
+        tools.pack()
+        for text, command in (
+            ("Show Logger", self.show_logger),
+            ("Environment Generator", self.show_environment_generator),
+            ("Add Model", self.show_add_model),
+        ):
+            tk.Button(tools, text=text, command=command).pack(side=tk.LEFT, padx=5)
         self._swap_page(frame, "Ollama - Mode Selector")
 
     # ---- loading the model ----
@@ -125,13 +137,9 @@ class ClientManager:
     def show_loading(self, model_name):
         """Busy page with a spinning bar, shown while a model loads."""
         frame = tk.Frame(self.container)
-        tk.Label(frame, text=f"Loading {model_name}", font=("Arial", 14, "bold")).pack(
-            pady=(120, 5)
-        )
-        tk.Label(
-            frame,
-            text="First run downloads the model - this can take a few minutes.",
-            fg="gray",
+        Theme.heading(frame, f"Loading {model_name}").pack(pady=(120, 6))
+        Theme.hint(
+            frame, "First run downloads the model - this can take a few minutes."
         ).pack(pady=5)
         bar = ttk.Progressbar(frame, mode="indeterminate", length=320)
         bar.pack(pady=15)
@@ -151,18 +159,15 @@ class ClientManager:
 
     def show_load_error(self, model_name, status: ModelStatus = ModelStatus.ERROR):
         frame = tk.Frame(self.container)
-        tk.Label(
+        Theme.heading(
             frame,
-            text=f"Could not load {model_name} ({status.value})",
-            font=("Arial", 14, "bold"),
+            f"Could not load {model_name} ({status.value})",
             fg=STATUS_COLORS.get(status),
-        ).pack(pady=(120, 5))
-        tk.Label(
-            frame,
-            text="Check that Ollama is installed and the model name is correct.",
-            fg="gray",
+        ).pack(pady=(120, 6))
+        Theme.hint(
+            frame, "Check that Ollama is installed and the model name is correct."
         ).pack(pady=5)
-        tk.Button(frame, text="← Back to modes", command=self.show_selector).pack(pady=15)
+        tk.Button(frame, text="← Back to modes", command=self.show_selector).pack(pady=18)
         self._swap_page(frame, "Ollama - Error")
 
     def show_mode(self, page_class):
