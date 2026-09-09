@@ -1,5 +1,8 @@
 from tkinter import messagebox
 import tkinter as tk
+import webbrowser
+from constants import OLLAMA_LIBRARY_URL
+
 
 class ModelAdderPopup(tk.Toplevel):
 
@@ -13,6 +16,13 @@ class ModelAdderPopup(tk.Toplevel):
         self.window = tk.Frame(self)
         self.window.pack(fill=tk.BOTH, expand=True)
         tk.Label(self.window,text="Current Models",font=("Arial", 14, "bold")).pack(pady=(10, 5))
+        link_frame = tk.Frame(self.window)
+        link_frame.pack(pady=(0, 0))
+        tk.Label(link_frame,text="Open Ollama Library to see all models: ",font=("Arial", 10)).pack(side=tk.LEFT)
+        link = tk.Label(link_frame,text=OLLAMA_LIBRARY_URL,fg="blue",cursor="hand2",font=("Arial", 10, "underline"))
+        link.pack(side=tk.LEFT)
+        link.bind("<Button-1>", self.open_library)
+        tk.Label(self.window,text="Paste the model name into the box below and click Add Model",font=("Arial", 10)).pack(pady=(0, 10))
         self.models_list = tk.Listbox(self.window,width=80,height=12)
         self.models_list.pack(padx=15,pady=5,fill=tk.BOTH,expand=True)
         add_frame = tk.Frame(self.window)
@@ -23,6 +33,9 @@ class ModelAdderPopup(tk.Toplevel):
         ).pack(side=tk.RIGHT)
         self.models_manager.subscribe(self.update_models)
         self.update_models(self.models_manager.get_all_models())
+
+    def open_library(self, event=None):
+        webbrowser.open_new_tab(OLLAMA_LIBRARY_URL)
 
     def update_models(self, models):
         self.models_list.delete(0, tk.END)
@@ -39,7 +52,6 @@ class ModelAdderPopup(tk.Toplevel):
             return
         self.models_manager.add_model(model)
         self.model_entry.delete(0, tk.END)
-
 
     def _close(self):
         self.destroy()

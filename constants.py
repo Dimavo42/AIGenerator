@@ -8,7 +8,7 @@ MODELS = ["richardyoung/qwen2.5-coder-14b-instruct-abliterated"
             ,"dolphin-mistral"
             ,"dolphin-mixtral"
             ,"dolphin-phi"]
-
+OLLAMA_LIBRARY_URL = "https://ollama.com/library/"
 
 STOCKS_TABLE_DEFAULT_TICKERS = ["AAPL", "MSFT", "NVDA", "GOOGL", "AMZN", "TSLA", "META", "^GSPC"]
 STOCKS_TABLE_DEFAULT_COLUMNS = (

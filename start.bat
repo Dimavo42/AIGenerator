@@ -1,7 +1,7 @@
 @echo off
 
 echo ============================
-echo qwen SetupScript
+echo Ollama Python SetupScript
 echo ============================
 
 echo Checking for Python installation...
@@ -26,7 +26,9 @@ echo Python is installed.
 
 echo Checking for Ollama installation...
 
-ollama --version >nul 2&1
+ollama --version >nul 2>&1
+if errorlevel 1 if exist "%LOCALAPPDATA%\Programs\Ollama\ollama.exe" set "PATH=%PATH%;%LOCALAPPDATA%\Programs\Ollama"
+ollama --version >nul 2>&1
 if errorlevel 1 (
 
     echo Ollama is not installed.

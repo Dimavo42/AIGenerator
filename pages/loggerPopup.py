@@ -1,6 +1,5 @@
 import tkinter as tk
 from tkinter import ttk
-
 from constants import LogSource
 from core.logger import Logger
 
