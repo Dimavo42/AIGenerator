@@ -6,6 +6,7 @@ from core.logger import Logger
 from core.ollamaServerManager import OllamaServerManager
 from pages.chatModePage import ChatModePage
 from pages.environmentTablePopup import EnvironmentTablePopup
+from pages.journalStocksPage import JournalStocksPage
 from pages.loggerPopup import LoggerPopup
 from pages.modelAdderPopup import ModelAdderPopup
 from pages.stocksPage import StocksPage
@@ -18,7 +19,8 @@ class ClientManager:
 
     _MODES = {
         "ChatMode": ChatModePage,
-        "Stocks": StocksPage
+        "Stocks": StocksPage,
+        "JournalStocks": JournalStocksPage
     }
     _models_manager = ModelsManager()
 

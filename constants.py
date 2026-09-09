@@ -20,6 +20,27 @@ STOCKS_TABLE_DEFAULT_COLUMNS = (
     )
 
 
+JOURNAL_TABLE_DEFAULT_COLUMNS = (
+        ("symbol", "Symbol", 80),
+        ("name", "Name", 180),
+        ("begin_price", "Begin Price", 90),
+        ("price_now", "Price Now", 90),
+        ("date", "Date", 100),
+        ("profit", "Profit %", 90),
+    )
+
+# How a journal entry writes down the day it was opened.
+JOURNAL_DATE_FORMAT = "%Y-%m-%d"
+
+# The fields of a journal entry that are actually stored, so the only ones
+# worth editing - price now and profit are worked out from the live quote.
+JOURNAL_ENTRY_EDIT_FIELDS = (
+        ("symbol", "Symbol"),
+        ("name", "Name"),
+        ("begin_price", "Begin Price"),
+        ("date", "Date (YYYY-MM-DD)"),
+    )
+
 STOCKS_CHART_POPUP_PERIODS = {
         "1M": "1mo",
         "3M": "3mo",
@@ -55,6 +76,7 @@ class DataKey(str, Enum):
 
     MODELS = "models"
     STOCKS_WATCHLIST = "stocks_watchlist"
+    STOCKS_JOURNAL = "stocks_journal"
     SELECTED_MODELS = "selected_models"
     CHART = "chart"
 
@@ -74,6 +96,7 @@ DEFAULT_ENVIRONMENT = {
 DEFAULT_DATA = {
     DataKey.MODELS: MODELS,
     DataKey.STOCKS_WATCHLIST: STOCKS_TABLE_DEFAULT_TICKERS,
+    DataKey.STOCKS_JOURNAL: [],
     DataKey.SELECTED_MODELS: {},
     DataKey.CHART: {"period": "1mo", "interval": "1d"},
 }
@@ -85,6 +108,7 @@ class LogSource(str, Enum):
     ENVIRONMENT = "Environment"
     CHAT_MODE = "Chat Mode"
     STOCKS_MODE = "Stocks"
+    JOURNAL_STOCKS_MODE = "Journal Stocks"
     YFINANCE_API = "yfinance Api"
 
     def __str__(self):

@@ -135,6 +135,8 @@ class StocksPage(PageBuilder):
     """
     mode_name = LogSource.STOCKS_MODE
     geometry = "1200x800"
+    # The right half. A mode that shows a different table only swaps this.
+    table_class = StocksTable
 
     def build(self, app, parent=None):
         self.app = app
@@ -151,12 +153,12 @@ class StocksPage(PageBuilder):
         tk.Button(header,text="← Back to modes",command=app.show_selector).pack(side=tk.RIGHT)
         # ---------- Pages ----------
         self.chat_page = ChatModePage()
-        self.table_page = StocksTable(on_pick=self._ask_about)
+        self.table_page = self.table_class(on_pick=self._ask_about)
         chat_frame = self.chat_page.build(app,self.frame)
         stocks_frame = self.table_page.build(app,self.frame)
         chat_frame.grid(row=1,column=0,sticky="nsew",padx=(10, 5),pady=10)
         stocks_frame.grid(row=1,column=1,sticky="nsew",padx=(5, 10),pady=10)
-        Logger.log("Stocks mode opened with the chat and the stocks pages.",self.mode_name)
+        Logger.log(f"{self.mode_name} opened with the chat and the table pages.",self.mode_name)
         return self.frame
 
     def _ask_about(self, symbol: str):
