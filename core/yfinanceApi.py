@@ -1,8 +1,9 @@
 import threading
 from concurrent.futures import ThreadPoolExecutor
 import yfinance
-from constants import LogSource
+from constants import EnvKey, LogSource
 from core.logger import Logger
+from scripts.environment import Environment
 
 
 class YFinanceApi:
@@ -12,10 +13,7 @@ class YFinanceApi:
     only thing that can go wrong is the network. Every call blocks - call them
     from a worker thread.
     """
-
     name = LogSource.YFINANCE_API
-    # Company names never change during a run, and asking for one is the slow
-    # part of a refresh, so each is looked up once.
     _names: dict[str, str] = {}
     _instance = None
     _lock = threading.Lock()
@@ -35,7 +33,8 @@ class YFinanceApi:
         if not symbols:
             return []
         # One symbol is one HTTP round trip, so ask for them side by side.
-        with ThreadPoolExecutor(max_workers=min(8, len(symbols))) as pool:
+        max_workers = Environment.get_int(EnvKey.YFINANCE_MAX_WORKERS, 8)
+        with ThreadPoolExecutor(max_workers=min(max_workers, len(symbols))) as pool:
             rows = list(pool.map(self.get_quote, symbols))
         rows = [row for row in rows if row is not None]
         Logger.log(f"Loaded {len(rows)} of {len(symbols)} quotes.", self.name)

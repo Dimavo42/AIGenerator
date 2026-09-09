@@ -1,13 +1,16 @@
 import threading
 from core.clientManager import ClientManager
 from core.ollamaServerManager import OllamaServerManager
+from scripts.environment import Environment
 
 
 def main():
-    # Warm up Ollama + the model in the background so the GUI shows up instantly.
+    Environment.load()
     threading.Thread(target=OllamaServerManager().start_ollama_server, daemon=True).start()
-    ClientManager().run()
-
+    try:
+        ClientManager().run()
+    finally:
+        Environment.save()
 
 if __name__ == "__main__":
     main()

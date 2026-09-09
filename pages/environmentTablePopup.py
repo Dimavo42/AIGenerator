@@ -4,7 +4,7 @@ from core.logger import Logger
 from scripts.environment import Environment
 
 
-class EnvironmentTablePage(tk.Toplevel):
+class EnvironmentTablePopup(tk.Toplevel):
     """Editable key/value grid for the .env file."""
 
     def __init__(self, parent, data,on_close=None):
@@ -40,7 +40,7 @@ class EnvironmentTablePage(tk.Toplevel):
             key:value.get() for key, value in self.rows
         }
         Environment.save_all(values)
-        Logger.log(f"Saved {len(Environment.get_all_enviorment())} environment keys.", LogSource.ENVIRONMENT)
+        Logger.log(f"Saved {len(Environment.get_all_environment())} environment keys.", LogSource.ENVIRONMENT)
         self._close()
 
     def _close(self):

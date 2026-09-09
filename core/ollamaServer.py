@@ -2,13 +2,15 @@ import ollama
 import subprocess
 import time
 import socket
-from constants import MODELS, LogSource, ServerStatus, ModelStatus
+from constants import MODELS, DataKey, EnvKey, LogSource, ServerStatus, ModelStatus
 from core.logger import Logger
+from scripts.environment import Environment
 
 
 class OllamaServer:
-    def __init__(self, model: str = MODELS[0]):
-        self.model = model
+    def __init__(self, model: str = None):
+        # No model given means the one at the top of the remembered list.
+        self.model = model or list(Environment.get_data(DataKey.MODELS, MODELS))[0]
         self.server_status = ServerStatus.NOT_RUNNING
         self.model_status = ModelStatus.NOT_LOADED
         self.server_process = None
@@ -18,19 +20,28 @@ class OllamaServer:
 
     def get_model(self):
         return self.model
-    
+
+    @staticmethod
+    def get_address():
+        """Where the server is expected to answer, as set in .env."""
+        return (
+            Environment.get(EnvKey.OLLAMA_HOST, "localhost"),
+            Environment.get_int(EnvKey.OLLAMA_PORT, 11434),
+        )
+
     def is_server_running(self):
         """Check if Ollama server is already running"""
         try:
-            with socket.create_connection(("localhost", 11434), timeout=1):
+            with socket.create_connection(self.get_address(), timeout=1):
                 return True
         except OSError:
             return False
-    
+
     def start_server(self) -> ServerStatus:
         """Start the Ollama server. Returns the resulting ServerStatus."""
+        host, port = self.get_address()
         if self.is_server_running():
-            Logger.log("Ollama server is already running on localhost:11434", LogSource.SERVER)
+            Logger.log(f"Ollama server is already running on {host}:{port}", LogSource.SERVER)
             self.server_status = ServerStatus.RUNNING
             return self.server_status
         try:
@@ -42,7 +53,9 @@ class OllamaServer:
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL
             )
-            for _ in range(60):
+            # Wait for it in half-second steps, for as long as .env allows.
+            timeout = Environment.get_int(EnvKey.OLLAMA_STARTUP_TIMEOUT, 30)
+            for _ in range(max(1, int(timeout * 2))):
                 if self.is_server_running():
                     self.server_status = ServerStatus.RUNNING
                     Logger.log("Ollama server started successfully.", LogSource.SERVER)
@@ -138,7 +151,6 @@ class OllamaServer:
         if self.initialize() == ModelStatus.LOADED:
             Logger.log(f"Model changed to {self.model}.", self.model)
             return self.model_status
-        # Keep the object honest about what is actually loaded.
         Logger.log(f"Failed to load {new_model}, staying on {previous_model}.", new_model)
         self.model = previous_model
         self.model_status = previous_status

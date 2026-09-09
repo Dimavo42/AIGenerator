@@ -1,13 +1,13 @@
 import threading
 import tkinter as tk
 from tkinter import ttk
-from constants import  STATUS_COLORS, ModelStatus
+from constants import  STATUS_COLORS, DataKey, ModelStatus
 from core.logger import Logger
 from core.ollamaServerManager import OllamaServerManager
 from pages.chatModePage import ChatModePage
-from pages.environmentTablePage import EnvironmentTablePage
-from pages.loggerPage import LoggerPage
-from pages.modelPopUpAdder import ModelPopUpAdder
+from pages.environmentTablePopup import EnvironmentTablePopup
+from pages.loggerPopup import LoggerPopup
+from pages.modelAdderPopup import ModelAdderPopup
 from pages.stocksPage import StocksPage
 from scripts.environment import Environment
 from scripts.modelsManager import ModelsManager
@@ -20,12 +20,13 @@ class ClientManager:
         "ChatMode": ChatModePage,
         "Stocks": StocksPage
     }
-    _data = Environment.get_all_enviorment()
     _models_manager = ModelsManager()
 
     def __init__(self):
         self.root = tk.Tk()
         self.root.geometry("600x500")
+        # Closing the window is what ends the program, so it is what saves it.
+        self.root.protocol("WM_DELETE_WINDOW", self._on_close)
         # Every page is packed into this container; only one lives at a time.
         self.container = tk.Frame(self.root)
         self.container.pack(fill=tk.BOTH, expand=True)
@@ -37,10 +38,21 @@ class ClientManager:
         self._models = self._models_manager.get_all_models()
         self._models_manager.subscribe(self._on_models_changed)
          # Kept on the instance so the vars outlive the selector frame.
-        self.model_vars = { mode_name: tk.StringVar(value=self._models[0]) for mode_name in self._MODES }
+        self.model_vars = {
+            mode_name: tk.StringVar(value=self._remembered_model(mode_name))
+            for mode_name in self._MODES
+        }
         self.model_comboboxes = {}
         Logger.log("GUI started.")
         self.show_selector()
+
+    # ---- what the last run left behind ----
+    def _remembered_model(self, mode_name):
+        """The model this mode was last opened with, if it is still on the list."""
+        remembered = Environment.get_data(DataKey.SELECTED_MODELS, {}).get(mode_name)
+        if remembered in self._models:
+            return remembered
+        return self._models[0] if self._models else ""
 
     # ---- page swapping ----
     def _swap_page(self, frame, title):
@@ -177,21 +189,24 @@ class ClientManager:
         """Open the logger window, or raise the one that is already open."""
         return self._open_window(
             "logger_instance",
-            lambda on_close: LoggerPage(self.root, on_close=on_close),
+            lambda on_close: LoggerPopup(self.root, on_close=on_close),
         )
 
     def show_environment_generator(self):
         """Open the environment window, or raise the one that is already open."""
         return self._open_window(
             "environment_generator_instance",
-            lambda on_close: EnvironmentTablePage(self.root, self._data, on_close=on_close),
+            # Read fresh: the page shows what is in .env right now, not at startup.
+            lambda on_close: EnvironmentTablePopup(
+                self.root, Environment.get_all_environment(), on_close=on_close
+            ),
         )
 
     def show_add_model(self):
         """Open the model add window, or raise the one that is already open."""
         return self._open_window(
             "model_pop_up_adder_instance",
-            lambda on_close: ModelPopUpAdder(self.root,self._models_manager,on_close=on_close),
+            lambda on_close: ModelAdderPopup(self.root,self._models_manager,on_close=on_close),
         )
 
     # ---- subscriptions ----
@@ -200,6 +215,16 @@ class ClientManager:
         for combo in self.model_comboboxes.values():
              if combo.winfo_exists():
                 combo["values"] = models
+
+    # ---- shutdown ----
+    def _on_close(self):
+        """Hand the window's own state to Environment, then write everything out."""
+        Environment.set_data(
+            DataKey.SELECTED_MODELS,
+            {mode_name: var.get() for mode_name, var in self.model_vars.items()},
+        )
+        Environment.save()
+        self.root.destroy()
 
     def run(self):
         self.root.mainloop()

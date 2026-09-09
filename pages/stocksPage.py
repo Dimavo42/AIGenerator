@@ -1,31 +1,23 @@
 import threading
 import tkinter as tk
-from tkinter import ttk
-from constants import DEFAULT_TICKERS, STATUS_COLORS, LogSource, ModelStatus
+from tkinter import filedialog, ttk
+from constants import STOCKS_TABLE_DEFAULT_COLUMNS, STOCKS_TABLE_DEFAULT_TICKERS, STATUS_COLORS, STOCKS_CHART_POPUP_PEN_COLOR, STOCKS_CHART_POPUP_PEN_INTERVALS, STOCKS_CHART_POPUP_PEN_WIDTH, STOCKS_CHART_POPUP_PERIODS, DataKey, LogSource, ModelStatus
 from core.logger import Logger
 from pages.chatModePage import ChatModePage
 from pages.pageBuilder import PageBuilder
 from core.yfinanceApi import YFinanceApi
+from scripts.environment import Environment
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 
-
 class StocksTable(PageBuilder):
     """The stocks half: the watchlist, as yfinance last saw it."""
-
     mode_name = LogSource.STOCKS_MODE
-    COLUMNS = (
-        ("symbol", "Symbol", 90),
-        ("name", "Name", 200),
-        ("last", "Last", 80),
-        ("change", "Change %", 90),
-        ("currency", "Currency", 80),
-    )
+    COLUMNS = STOCKS_TABLE_DEFAULT_COLUMNS
 
     def __init__(self, on_pick=None):
-        # The mode page passes a callback so a picked row can reach the chat.
         self.on_pick = on_pick
-        self.symbols = list(DEFAULT_TICKERS)
+        self.symbols = list(Environment.get_data(DataKey.STOCKS_WATCHLIST, STOCKS_TABLE_DEFAULT_TICKERS))
 
     def build(self, app, parent=None):
         self.app = app
@@ -61,7 +53,7 @@ class StocksTable(PageBuilder):
     # ---- loading ----
     def refresh(self):
         """Reload the table in the background."""
-        self.api_status.config(text="Loading from yfinance...", fg="orange")
+        self.api_status.config(text="Loading from yfinance...", fg=STATUS_COLORS[ModelStatus.LOADING])
         threading.Thread(target=self._refresh_worker, daemon=True).start()
 
     def _refresh_worker(self):
@@ -74,11 +66,11 @@ class StocksTable(PageBuilder):
             return
         self.tree.delete(*self.tree.get_children())
         if not rows:
-            self.api_status.config(text="No quotes came back - see the logger.", fg="red")
+            self.api_status.config(text="No quotes came back - see the logger.", fg=STATUS_COLORS[ModelStatus.ERROR])
             return
         for row in rows:
             self.tree.insert("", tk.END, values=[row[name] for name, _, _ in self.COLUMNS])
-        self.api_status.config(text=f"{len(rows)} symbols.", fg="green")
+        self.api_status.config(text=f"{len(rows)} symbols.", fg=STATUS_COLORS[ModelStatus.LOADED])
 
     # ---- the watchlist ----
     def _add_symbol(self):
@@ -87,9 +79,10 @@ class StocksTable(PageBuilder):
             return
         self.symbol_entry.delete(0, tk.END)
         if symbol in self.symbols:
-            self.api_status.config(text=f"{symbol} is already on the list.", fg="orange")
+            self.api_status.config(text=f"{symbol} is already on the list.", fg=STATUS_COLORS[ModelStatus.LOADING])
             return
         self.symbols.append(symbol)
+        Environment.set_data(DataKey.STOCKS_WATCHLIST, self.symbols)
         Logger.log(f"Added {symbol} to the watchlist.", self.mode_name)
         self.refresh()
 
@@ -99,13 +92,14 @@ class StocksTable(PageBuilder):
         if symbol is None:
             return
         self.symbols.remove(symbol)
+        Environment.set_data(DataKey.STOCKS_WATCHLIST, self.symbols)
         Logger.log(f"Removed {symbol} from the watchlist.", self.mode_name)
         self.refresh()
 
     def _selected_symbol(self) -> str | None:
         selection = self.tree.selection()
         if not selection:
-            self.api_status.config(text="Pick a row first.", fg="orange")
+            self.api_status.config(text="Pick a row first.", fg=STATUS_COLORS[ModelStatus.LOADING])
             return None
         return self.tree.item(selection[0], "values")[0]
 
@@ -123,7 +117,7 @@ class StocksTable(PageBuilder):
         if not values:
             return
         symbol = values[0]
-        StockChartPopUp(self.frame,symbol)
+        StockChartPopup(self.frame,symbol)
 
     # ---- PageBuilder hooks ----
     # This half never asks the model itself; the chat half does that.
@@ -132,7 +126,6 @@ class StocksTable(PageBuilder):
 
     def on_response(self, response: str | None, status: ModelStatus):
         pass
-
 
 class StocksPage(PageBuilder):
     """The stocks mode: a chat page and a stocks page sharing one window.
@@ -203,28 +196,23 @@ class StocksPage(PageBuilder):
     def on_response(self, response: str | None, status: ModelStatus):
         self.chat_page.on_response(response, status)
 
-class StockChartPopUp(tk.Toplevel):
-
-    PERIODS = {
-        "1M": "1mo",
-        "3M": "3mo",
-        "6M": "6mo",
-        "1Y": "1y",
-        "2Y": "2y",
-        "5Y": "5y",
-    }
-
-    INTERVALS = [
-        "1d",
-        "5d",
-        "1wk",
-        "1mo",
-    ]
+class StockChartPopup(tk.Toplevel):
+    PERIODS = STOCKS_CHART_POPUP_PERIODS
+    INTERVALS = STOCKS_CHART_POPUP_PEN_INTERVALS
+    PEN_COLOR = STOCKS_CHART_POPUP_PEN_COLOR
+    PEN_WIDTH = STOCKS_CHART_POPUP_PEN_WIDTH
 
     def __init__(self, parent, symbol):
         super().__init__(parent)
         self.symbol = symbol
-        self.current_period = "1mo"
+        # Finished strokes, in data coordinates, so they survive a redraw.
+        self.strokes = []
+        # The stroke the mouse is in the middle of, if any.
+        self.active_stroke = None
+        self.active_line = None
+        # Open on the range and interval the last chart was left on.
+        remembered = Environment.get_data(DataKey.CHART, {})
+        self.current_period = remembered.get("period", "1mo")
         self.title(f"{symbol} Chart")
         self.geometry("1000x650")
         # ---------- Title ----------
@@ -242,7 +230,7 @@ class StockChartPopUp(tk.Toplevel):
                 text=text,
                 command=lambda p=period: self._change_period(p)).pack(side=tk.LEFT,padx=2)
         tk.Label(controls,text="Interval:").pack( side=tk.LEFT,padx=(20, 5))
-        self.interval_var = tk.StringVar(value="1d")
+        self.interval_var = tk.StringVar(value=remembered.get("interval", "1d"))
         self.interval_combo = ttk.Combobox(
             controls,
             textvariable=self.interval_var,
@@ -251,11 +239,20 @@ class StockChartPopUp(tk.Toplevel):
             width=8)
         self.interval_combo.pack(side=tk.LEFT)
         self.interval_combo.bind("<<ComboboxSelected>>",lambda _event: self.reload_chart())
+        # ---------- Drawing ----------
+        self.draw_var = tk.BooleanVar(value=False)
+        tk.Checkbutton(controls,text="Draw",variable=self.draw_var).pack(side=tk.LEFT,padx=(20, 5))
+        tk.Button(controls,text="Clear drawing",command=self._clear_drawing).pack(side=tk.LEFT,padx=2)
+        tk.Button(controls,text="Save PNG",command=self._save_png).pack(side=tk.LEFT,padx=2)
         # ---------- Graph ----------
         self.figure = Figure(figsize=(8, 5),dpi=100)
         self.ax = self.figure.add_subplot(111)
         self.canvas = FigureCanvasTkAgg(self.figure,master=self)
         self.canvas.get_tk_widget().pack(fill=tk.BOTH,expand=True,padx=10,pady=10)
+        # The pen listens to matplotlib, not Tk, so it gets data coordinates.
+        self.canvas.mpl_connect("button_press_event", self._on_pen_down)
+        self.canvas.mpl_connect("motion_notify_event", self._on_pen_move)
+        self.canvas.mpl_connect("button_release_event", self._on_pen_up)
         # Initial graph
         self.reload_chart()
 
@@ -267,6 +264,8 @@ class StockChartPopUp(tk.Toplevel):
         self.status_label.config(text=ModelStatus.LOADING,fg=STATUS_COLORS[ModelStatus.LOADING])
         period = self.current_period
         interval = self.interval_var.get()
+        # Every range or interval change comes through here, so remember it here.
+        Environment.set_data(DataKey.CHART, {"period": period, "interval": interval})
         threading.Thread(target=self._load_data,args=(period, interval),daemon=True).start()
 
     def _load_data(self, period, interval):
@@ -287,8 +286,60 @@ class StockChartPopUp(tk.Toplevel):
         self.ax.set_xlabel("Date")
         self.ax.set_ylabel("Price")
         self.ax.grid(True)
+        # ax.clear() wipes the strokes too, so put them back on top.
+        for xs, ys in self.strokes:
+            self.ax.plot(xs, ys, color=self.PEN_COLOR, linewidth=self.PEN_WIDTH)
         self.figure.autofmt_xdate()
         self.canvas.draw()
         self.status_label.config(text=f"{len(history)} points loaded.",fg=STATUS_COLORS[ModelStatus.LOADED])
-        
-            
+
+    # ---- drawing ----
+    def _on_pen_down(self, event):
+        if not self.draw_var.get() or event.inaxes is not self.ax:
+            return
+        self.active_stroke = ([event.xdata], [event.ydata])
+        self.active_line = self.ax.plot(
+            *self.active_stroke,
+            color=self.PEN_COLOR,
+            linewidth=self.PEN_WIDTH)[0]
+        self.canvas.draw_idle()
+
+    def _on_pen_move(self, event):
+        if self.active_stroke is None or event.inaxes is not self.ax:
+            return
+        xs, ys = self.active_stroke
+        xs.append(event.xdata)
+        ys.append(event.ydata)
+        self.active_line.set_data(xs, ys)
+        self.canvas.draw_idle()
+
+    def _on_pen_up(self, _event):
+        if self.active_stroke is None:
+            return
+        # A click without a drag leaves nothing worth keeping.
+        if len(self.active_stroke[0]) > 1:
+            self.strokes.append(self.active_stroke)
+        else:
+            self.active_line.remove()
+            self.canvas.draw_idle()
+        self.active_stroke = None
+        self.active_line = None
+
+    def _clear_drawing(self):
+        if not self.strokes:
+            return
+        self.strokes.clear()
+        self.reload_chart()
+
+    def _save_png(self):
+        path = filedialog.asksaveasfilename(
+            parent=self,
+            title="Save chart as PNG",
+            defaultextension=".png",
+            initialfile=f"{self.symbol}_{self.current_period}.png",
+            filetypes=[("PNG image", "*.png")])
+        if not path:
+            return
+        self.figure.savefig(path, dpi=150, bbox_inches="tight")
+        Logger.log(f"Saved the {self.symbol} chart to {path}.", LogSource.STOCKS_MODE)
+        self.status_label.config(text=f"Saved to {path}", fg=STATUS_COLORS[ModelStatus.LOADED])

@@ -5,7 +5,7 @@ from constants import LogSource
 from core.logger import Logger
 
 
-class LoggerPage(tk.Toplevel):
+class LoggerPopup(tk.Toplevel):
     """Live view of the app log, filtered by source, refreshed twice a second."""
 
     def __init__(self, parent, on_close=None):

@@ -1,9 +1,11 @@
-from constants import MODELS
+from constants import MODELS, DataKey
+from scripts.environment import Environment
 
 
 class ModelsManager:
     def __init__(self):
-        self._models = MODELS
+        # The list the user last left behind, or the built-in one on a first run.
+        self._models = list(Environment.get_data(DataKey.MODELS, MODELS))
         self._subscribers = []
 
     def subscribe(self, callback):
@@ -13,6 +15,8 @@ class ModelsManager:
         self._subscribers.remove(callback)
 
     def _notify(self):
+        # The list just changed, so this is also where it is remembered.
+        Environment.set_data(DataKey.MODELS, self._models)
         for callback in self._subscribers:
             callback(self._models)
 
@@ -28,6 +32,3 @@ class ModelsManager:
         if model in self._models:
             self._models.remove(model)
             self._notify()
-
-
-
