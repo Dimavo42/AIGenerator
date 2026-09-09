@@ -90,7 +90,7 @@ class StocksTable(PageBuilder):
             self.api_status.config(text=f"{symbol} is already on the list.", fg="orange")
             return
         self.symbols.append(symbol)
-        logger.log(f"Added {symbol} to the watchlist.", self.mode_name)
+        Logger.log(f"Added {symbol} to the watchlist.", self.mode_name)
         self.refresh()
 
     def _remove_symbol(self):
@@ -99,7 +99,7 @@ class StocksTable(PageBuilder):
         if symbol is None:
             return
         self.symbols.remove(symbol)
-        logger.log(f"Removed {symbol} from the watchlist.", self.mode_name)
+        Logger.log(f"Removed {symbol} from the watchlist.", self.mode_name)
         self.refresh()
 
     def _selected_symbol(self) -> str | None:
@@ -185,7 +185,7 @@ class StocksPage(PageBuilder):
             return
         if summary is None:
             self.chat_page.set_question(f"What should I know about the stock {symbol}?")
-            logger.log(f"No yfinance data for {symbol} - asked without it.", self.mode_name)
+            Logger.log(f"No yfinance data for {symbol} - asked without it.", self.mode_name)
             return
         self.chat_page.set_question(
             "Here is live market data from yfinance:\n"
