@@ -1,7 +1,8 @@
 import threading
 from concurrent.futures import ThreadPoolExecutor
 import yfinance
-from constants import EnvKey, LogSource
+from yfinance.const import EQUITY_SCREENER_EQ_MAP, ETF_SCREENER_EQ_MAP
+from constants import STOCKS_SEARCH_ALL, EnvKey, LogSource
 from core.logger import Logger
 from scripts.environment import Environment
 
@@ -14,7 +15,9 @@ class YFinanceApi:
     from a worker thread.
     """
     name = LogSource.YFINANCE_API
-    _names: dict[str, str] = {}
+    # Name, sector and industry per symbol - they come from the same slow
+    # .info call and hardly ever change, so it is made once per symbol.
+    _profiles: dict[str, dict] = {}
     _instance = None
     _lock = threading.Lock()
 
@@ -41,7 +44,7 @@ class YFinanceApi:
         return rows
 
     def get_quote(self, symbol: str) -> dict | None:
-        """One symbol as a {symbol, name, last, change, currency} row, or None."""
+        """One symbol as a {symbol, name, last, change, currency, sector, industry} row, or None."""
         symbol = symbol.strip().upper()
         try:
             ticker = yfinance.Ticker(symbol)
@@ -52,12 +55,15 @@ class YFinanceApi:
                 # Yahoo answers with an empty quote for a symbol it does not know.
                 Logger.log(f"No quote for {symbol}.", self.name)
                 return None
+            profile = self.get_profile(symbol)
             return {
                 "symbol": symbol,
-                "name": self.get_name(symbol),
+                "name": profile["name"],
                 "last": self._round(last),
                 "change": self._change(last, previous),
                 "currency": self._pick(fast, "currency") or "",
+                "sector": profile["sector"],
+                "industry": profile["industry"],
             }
         except Exception as error:
             Logger.log(f"{symbol} failed: {error}", self.name)
@@ -65,17 +71,112 @@ class YFinanceApi:
 
     def get_name(self, symbol: str) -> str:
         """The company name, remembered after the first lookup."""
+        return self.get_profile(symbol)["name"]
+
+    def get_profile(self, symbol: str) -> dict:
+        """{name, sector, industry} for a symbol, remembered after the first lookup.
+
+        An index or a fund has no sector, so those two can come back empty.
+        """
         symbol = symbol.strip().upper()
-        if symbol in self._names:
-            return self._names[symbol]
-        name = symbol
+        if symbol in self._profiles:
+            return self._profiles[symbol]
+        profile = {"name": symbol, "sector": "", "industry": ""}
         try:
             info = yfinance.Ticker(symbol).info or {}
-            name = info.get("shortName") or info.get("longName") or symbol
+            profile = {
+                "name": info.get("shortName") or info.get("longName") or symbol,
+                "sector": info.get("sector") or "",
+                "industry": info.get("industry") or "",
+            }
         except Exception as error:
-            Logger.log(f"No name for {symbol}: {error}", self.name)
-        self._names[symbol] = name
-        return name
+            Logger.log(f"No profile for {symbol}: {error}", self.name)
+        self._profiles[symbol] = profile
+        return profile
+
+    # ---- searching the market ----
+    # Yahoo refuses a screener page bigger than this.
+    SCREEN_PAGE_SIZE = 250
+
+    @staticmethod
+    def _etf_categories() -> list[str]:
+        return sorted(ETF_SCREENER_EQ_MAP.get("categoryname", []))
+
+    @staticmethod
+    def _is_bond_category(category: str) -> bool:
+        """Yahoo has no bond screener - bonds are the ETFs in a bond category."""
+        return "Bond" in category or category.startswith("Muni") or "Government" in category
+
+    @classmethod
+    def get_search_choices(cls, key: str) -> list[str]:
+        """Every value Yahoo's screener accepts for a category, like every sector.
+
+        ETFs and bonds start with STOCKS_SEARCH_ALL, since outside the US Yahoo
+        files its ETFs under no category at all.
+        """
+        if key == "etf":
+            return [STOCKS_SEARCH_ALL, *(c for c in cls._etf_categories() if not cls._is_bond_category(c))]
+        if key == "bond":
+            return [STOCKS_SEARCH_ALL, *(c for c in cls._etf_categories() if cls._is_bond_category(c))]
+        choices = EQUITY_SCREENER_EQ_MAP.get(key, [])
+        # Industries come grouped by the sector they belong to.
+        if isinstance(choices, dict):
+            choices = set().union(*choices.values())
+        return sorted(choices)
+
+    @classmethod
+    def _search_query(cls, key: str, value: str, region: str):
+        """The screener query for a search, and the field its biggest results sort by."""
+        if key not in ("etf", "bond"):
+            query = yfinance.EquityQuery(
+                "and", [yfinance.EquityQuery("eq", [key, value]), yfinance.EquityQuery("eq", ["region", region])]
+            )
+            return query, "intradaymarketcap"
+        in_region = yfinance.ETFQuery("eq", ["region", region])
+        if key == "etf" and value == STOCKS_SEARCH_ALL:
+            return in_region, "fundnetassets"
+        if value == STOCKS_SEARCH_ALL:
+            categories = [category for category in cls._etf_categories() if cls._is_bond_category(category)]
+            in_category = yfinance.ETFQuery("or", [yfinance.ETFQuery("eq", ["categoryname", c]) for c in categories])
+        else:
+            in_category = yfinance.ETFQuery("eq", ["categoryname", value])
+        return yfinance.ETFQuery("and", [in_category, in_region]), "fundnetassets"
+
+    def search(self, key: str, value: str, region: str, count: int) -> tuple[list[dict], int] | None:
+        """The `count` biggest stocks or ETFs in `region` whose `key` is `value`, and how many there are in all.
+
+        Rows come in the same shape as get_quote's, straight from the screener,
+        so a hundred results cost a request instead of a hundred.
+        """
+        rows, total = [], 0
+        try:
+            query, sort_field = self._search_query(key, value, region)
+            while len(rows) < count:
+                size = min(self.SCREEN_PAGE_SIZE, count - len(rows))
+                page = yfinance.screen(query, offset=len(rows), size=size, sortField=sort_field, sortAsc=False)
+                quotes = page.get("quotes") or []
+                total = page.get("total") or 0
+                rows.extend(self._screen_row(quote) for quote in quotes)
+                if len(quotes) < size or len(rows) >= total:
+                    break
+        except Exception as error:
+            Logger.log(f"Search for {key} {value} failed: {error}", self.name)
+            # Pages that did arrive are still worth showing.
+            if not rows:
+                return None
+        Logger.log(f"Found {len(rows)} of {total} for {key} {value} in {region}.", self.name)
+        return rows, total
+
+    def _screen_row(self, quote: dict) -> dict:
+        symbol = quote["symbol"]
+        change = quote.get("regularMarketChangePercent")
+        return {
+            "symbol": symbol,
+            "name": quote.get("shortName") or quote.get("longName") or symbol,
+            "last": self._round(quote.get("regularMarketPrice")),
+            "change": f"{float(change):+.2f}" if change is not None else "",
+            "currency": quote.get("currency") or "",
+        }
 
     def get_history(self,symbol,period="1mo",interval="1d"):
         try:

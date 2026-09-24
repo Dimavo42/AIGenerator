@@ -1,5 +1,4 @@
 from enum import Enum
-
 from theme import Theme
 
 
@@ -20,6 +19,28 @@ STOCKS_TABLE_DEFAULT_COLUMNS = (
         ("change", "Change %", 90),
         ("currency", "Currency", 80),
     )
+
+# The categories the stocks table can be searched by - key, then title. Sector and
+# industry are stock screener fields; ETF and bond search the ETF screener.
+STOCKS_SEARCH_CATEGORIES = (
+        ("sector", "Sector"),
+        ("industry", "Industry"),
+        ("etf", "ETF"),
+        ("bond", "Bonds"),
+    )
+# The first ETF and bond choice: every one of them, whatever its category.
+STOCKS_SEARCH_ALL = "All"
+# The markets a search can look in - screener region code, then title. The first one is the default.
+STOCKS_SEARCH_COUNTRIES = (
+        ("us", "USA"),
+        ("il", "TLV (Israel)"),
+        ("cn", "China"),
+        ("jp", "Japan"),
+    )
+# How many stocks a search fetches unless the user asks for another number.
+# Yahoo hands them out 250 at a time, so the ceiling keeps a search to a few requests.
+STOCKS_SEARCH_DEFAULT_ROWS = 100
+STOCKS_SEARCH_MAX_ROWS = 1000
 
 
 JOURNAL_TABLE_DEFAULT_COLUMNS = (

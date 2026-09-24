@@ -1,7 +1,8 @@
 import threading
 import tkinter as tk
+from datetime import datetime
 from tkinter import filedialog, ttk
-from constants import STOCKS_TABLE_DEFAULT_COLUMNS, STOCKS_TABLE_DEFAULT_TICKERS, STATUS_COLORS, STOCKS_CHART_POPUP_LINE_COLOR, STOCKS_CHART_POPUP_PEN_COLOR, STOCKS_CHART_POPUP_PEN_INTERVALS, STOCKS_CHART_POPUP_PEN_WIDTH, STOCKS_CHART_POPUP_PERIODS, DataKey, LogSource, ModelStatus
+from constants import JOURNAL_DATE_FORMAT, STOCKS_SEARCH_ALL, STOCKS_SEARCH_CATEGORIES, STOCKS_SEARCH_COUNTRIES, STOCKS_SEARCH_DEFAULT_ROWS, STOCKS_SEARCH_MAX_ROWS, STOCKS_TABLE_DEFAULT_COLUMNS, STOCKS_TABLE_DEFAULT_TICKERS, STATUS_COLORS, STOCKS_CHART_POPUP_LINE_COLOR, STOCKS_CHART_POPUP_PEN_COLOR, STOCKS_CHART_POPUP_PEN_INTERVALS, STOCKS_CHART_POPUP_PEN_WIDTH, STOCKS_CHART_POPUP_PERIODS, DataKey, LogSource, ModelStatus
 from core.logger import Logger
 from pages.chatModePage import ChatModePage
 from pages.pageBuilder import PageBuilder
@@ -12,13 +13,19 @@ from matplotlib.figure import Figure
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 
 class StocksTable(PageBuilder):
-    """The stocks half: the watchlist, as yfinance last saw it."""
+    """The stocks half: the watchlist, or a market search, as yfinance last saw it."""
     mode_name = LogSource.STOCKS_MODE
     COLUMNS = STOCKS_TABLE_DEFAULT_COLUMNS
+    CATEGORIES = STOCKS_SEARCH_CATEGORIES
+    COUNTRIES = STOCKS_SEARCH_COUNTRIES
 
     def __init__(self, on_pick=None):
         self.on_pick = on_pick
         self.symbols = list(Environment.get_data(DataKey.STOCKS_WATCHLIST, STOCKS_TABLE_DEFAULT_TICKERS))
+        # The search on show as (key, value, region, count), or None for the watchlist.
+        self.search = None
+        # Counts every load, so a slow one that finishes late cannot cover a newer one.
+        self.load_id = 0
 
     def build(self, app, parent=None):
         self.app = app
@@ -33,6 +40,48 @@ class StocksTable(PageBuilder):
         self.symbol_entry.bind("<Return>", lambda _event: self._add_symbol())
         tk.Button(add_row, text="Add", command=self._add_symbol, **Theme.PRIMARY_BUTTON).pack(side=tk.LEFT, padx=(8, 4))
         tk.Button(add_row, text="Remove", command=self._remove_symbol).pack(side=tk.LEFT)
+        # ---------- Search ----------
+        search_row = tk.Frame(self.frame)
+        search_row.pack(fill=tk.X, padx=14, pady=(0, 6))
+        tk.Label(search_row, text="Search by", fg=Theme.TEXT_MUTED, font=Theme.FONT_BOLD).pack(side=tk.LEFT, padx=(0, 8))
+        self.category_var = tk.StringVar(value=self.CATEGORIES[0][1])
+        category_combo = ttk.Combobox(
+            search_row,
+            textvariable=self.category_var,
+            values=[title for _, title in self.CATEGORIES],
+            state="readonly",
+            width=9)
+        category_combo.pack(side=tk.LEFT)
+        category_combo.bind("<<ComboboxSelected>>", lambda _event: self._fill_value_choices())
+        self.value_var = tk.StringVar()
+        # Wide enough for the long ETF categories, like "Allocation--70% to 85% Equity".
+        self.value_combo = ttk.Combobox(search_row, textvariable=self.value_var, state="readonly", width=30)
+        self.value_combo.pack(side=tk.LEFT, padx=(6, 0))
+        self._fill_value_choices()
+        # The where and how many, on a line of their own so the half page is wide enough.
+        search_options = tk.Frame(self.frame)
+        search_options.pack(fill=tk.X, padx=14, pady=(0, 6))
+        tk.Label(search_options, text="Country", fg=Theme.TEXT_MUTED, font=Theme.FONT_BOLD).pack(side=tk.LEFT, padx=(0, 8))
+        self.country_var = tk.StringVar(value=self.COUNTRIES[0][1])
+        ttk.Combobox(
+            search_options,
+            textvariable=self.country_var,
+            values=[title for _, title in self.COUNTRIES],
+            state="readonly",
+            width=12).pack(side=tk.LEFT)
+        tk.Label(search_options, text="Rows", fg=Theme.TEXT_MUTED, font=Theme.FONT_BOLD).pack(side=tk.LEFT, padx=(10, 6))
+        self.rows_var = tk.StringVar(value=str(STOCKS_SEARCH_DEFAULT_ROWS))
+        rows_box = tk.Spinbox(
+            search_options,
+            textvariable=self.rows_var,
+            from_=1,
+            to=STOCKS_SEARCH_MAX_ROWS,
+            increment=50,
+            width=5)
+        rows_box.pack(side=tk.LEFT)
+        rows_box.bind("<Return>", lambda _event: self._search())
+        tk.Button(search_options, text="Search", command=self._search, **Theme.PRIMARY_BUTTON).pack(side=tk.LEFT, padx=(8, 4))
+        tk.Button(search_options, text="Clear", command=self._clear_search).pack(side=tk.LEFT)
         self.tree = ttk.Treeview(self.frame, columns=[name for name, _, _ in self.COLUMNS], show="headings", height=15)
         for name, title, width in self.COLUMNS:
             self.tree.heading(name, text=title)
@@ -46,6 +95,7 @@ class StocksTable(PageBuilder):
         buttons = tk.Frame(footer)
         buttons.pack(side=tk.RIGHT)
         tk.Button(buttons, text="Refresh", command=self.refresh).pack(side=tk.LEFT, padx=4)
+        tk.Button(buttons, text="Add to journal", command=self._add_to_journal).pack(side=tk.LEFT, padx=4)
         if self.on_pick is not None:
             tk.Button(buttons, text="Ask the model about it", command=self._pick).pack(
                 side=tk.LEFT, padx=4
@@ -56,25 +106,92 @@ class StocksTable(PageBuilder):
 
     # ---- loading ----
     def refresh(self):
-        """Reload the table in the background."""
-        self.api_status.config(text="Loading from yfinance...", fg=STATUS_COLORS[ModelStatus.LOADING])
-        threading.Thread(target=self._refresh_worker, daemon=True).start()
+        """Reload whatever the table shows - the watchlist or the search - in the background."""
+        self.load_id += 1
+        text = f"Searching {self._search_label(self.search)}..." if self.search else "Loading from yfinance..."
+        self.api_status.config(text=text, fg=STATUS_COLORS[ModelStatus.LOADING])
+        threading.Thread(target=self._refresh_worker, args=(self.load_id, self.search), daemon=True).start()
 
-    def _refresh_worker(self):
-        rows = YFinanceApi.shared().get_quotes(self.symbols)
+    def _refresh_worker(self, load_id, search):
+        if search is None:
+            rows = YFinanceApi.shared().get_quotes(self.symbols)
+            result = (rows, len(rows))
+        else:
+            result = YFinanceApi.shared().search(*search)
         if self.frame.winfo_exists():
-            self.frame.after(0, self._show_rows, rows)
+            self.frame.after(0, self._show_rows, load_id, search, result)
 
-    def _show_rows(self, rows):
-        if not self.frame.winfo_exists():
+    def _show_rows(self, load_id, search, result):
+        if not self.frame.winfo_exists() or load_id != self.load_id:
             return
         self.tree.delete(*self.tree.get_children())
+        rows, total = result or ([], 0)
+        if search and result is not None and not rows:
+            # The search worked - Yahoo just lists nothing like it in that country.
+            text = f"Yahoo has no {self._search_label(search)} in {self._country_title(search[2])}."
+            self.api_status.config(text=text, fg=STATUS_COLORS[ModelStatus.LOADING])
+            return
         if not rows:
             self.api_status.config(text="No quotes came back - see the logger.", fg=STATUS_COLORS[ModelStatus.ERROR])
             return
         for row in rows:
             self.tree.insert("", tk.END, values=[row[name] for name, _, _ in self.COLUMNS])
-        self.api_status.config(text=f"{len(rows)} symbols.", fg=STATUS_COLORS[ModelStatus.LOADED])
+        if search:
+            text = f"{len(rows)} of {total} {self._search_label(search)} in {self._country_title(search[2])}."
+        else:
+            text = f"{len(rows)} symbols."
+        self.api_status.config(text=text, fg=STATUS_COLORS[ModelStatus.LOADED])
+
+    @staticmethod
+    def _search_label(search) -> str:
+        """What a search looks for, in words: "Technology stocks", "ETFs", "Corporate Bond ETFs"."""
+        key, value = search[0], search[1]
+        if key == "etf":
+            return "ETFs" if value == STOCKS_SEARCH_ALL else f"{value} ETFs"
+        if key == "bond":
+            return "bond ETFs" if value == STOCKS_SEARCH_ALL else f"{value} ETFs"
+        return f"{value} stocks"
+
+    # ---- searching the market by category ----
+    def _category_key(self) -> str:
+        """The screener field behind the category picked in the first dropdown."""
+        title = self.category_var.get()
+        return next(key for key, category_title in self.CATEGORIES if category_title == title)
+
+    def _country_region(self) -> str:
+        """The screener region code behind the picked country."""
+        title = self.country_var.get()
+        return next(region for region, country_title in self.COUNTRIES if country_title == title)
+
+    def _country_title(self, region: str) -> str:
+        return next(title for code, title in self.COUNTRIES if code == region)
+
+    def _fill_value_choices(self):
+        """Offer every value Yahoo knows for the picked category."""
+        values = YFinanceApi.get_search_choices(self._category_key())
+        self.value_combo.config(values=values)
+        if self.value_var.get() not in values:
+            self.value_var.set(values[0] if values else "")
+
+    def _search(self):
+        """Fill the table with the biggest stocks in the picked category."""
+        value = self.value_var.get()
+        if not value:
+            return
+        try:
+            count = int(self.rows_var.get())
+        except ValueError:
+            self.api_status.config(text="Rows has to be a whole number.", fg=STATUS_COLORS[ModelStatus.ERROR])
+            return
+        count = max(1, min(count, STOCKS_SEARCH_MAX_ROWS))
+        self.rows_var.set(str(count))
+        self.search = (self._category_key(), value, self._country_region(), count)
+        self.refresh()
+
+    def _clear_search(self):
+        """Back to the watchlist."""
+        self.search = None
+        self.refresh()
 
     # ---- the watchlist ----
     def _add_symbol(self):
@@ -88,12 +205,17 @@ class StocksTable(PageBuilder):
         self.symbols.append(symbol)
         Environment.set_data(DataKey.STOCKS_WATCHLIST, self.symbols)
         Logger.log(f"Added {symbol} to the watchlist.", self.mode_name)
+        # Show the watchlist the symbol just joined, even from a search.
+        self.search = None
         self.refresh()
 
     def _remove_symbol(self):
         """Drop the selected row from the watchlist."""
         symbol = self._selected_symbol()
         if symbol is None:
+            return
+        if symbol not in self.symbols:
+            self.api_status.config(text=f"{symbol} is not on the watchlist.", fg=STATUS_COLORS[ModelStatus.LOADING])
             return
         self.symbols.remove(symbol)
         Environment.set_data(DataKey.STOCKS_WATCHLIST, self.symbols)
@@ -112,6 +234,40 @@ class StocksTable(PageBuilder):
         symbol = self._selected_symbol()
         if symbol is not None:
             self.on_pick(symbol)
+
+    # ---- the journal ----
+    def _add_to_journal(self):
+        """Write the selected row into the journal, at the price the table shows.
+
+        The journal page reads its entries when it is built, so the new one is
+        there the next time the journal mode opens.
+        """
+        selection = self.tree.selection()
+        if not selection:
+            self.api_status.config(text="Pick a row first.", fg=STATUS_COLORS[ModelStatus.LOADING])
+            return
+        row = dict(zip([name for name, _, _ in self.COLUMNS], self.tree.item(selection[0], "values")))
+        symbol = row["symbol"]
+        journal = Environment.get_data(DataKey.STOCKS_JOURNAL, [])
+        if any(entry["symbol"] == symbol for entry in journal):
+            self.api_status.config(text=f"{symbol} is already in the journal.", fg=STATUS_COLORS[ModelStatus.LOADING])
+            return
+        try:
+            begin_price = float(row["last"])
+        except ValueError:
+            self.api_status.config(text=f"No price for {symbol} - refresh first.", fg=STATUS_COLORS[ModelStatus.ERROR])
+            return
+        journal.append(
+            {
+                "symbol": symbol,
+                "name": row["name"] or symbol,
+                "begin_price": begin_price,
+                "date": datetime.now().strftime(JOURNAL_DATE_FORMAT),
+            }
+        )
+        Environment.set_data(DataKey.STOCKS_JOURNAL, journal)
+        Logger.log(f"Added {symbol} to the journal at {begin_price}.", self.mode_name)
+        self.api_status.config(text=f"{symbol} added to the journal.", fg=STATUS_COLORS[ModelStatus.LOADED])
 
     def _on_double_click(self,event):
         row_id = self.tree.identify_row(event.y)
