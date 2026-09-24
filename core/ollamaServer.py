@@ -49,9 +49,10 @@ class OllamaServer:
             Logger.log("Starting Ollama server...", LogSource.SERVER)
             # Start ollama serve in the background
             self.server_process = subprocess.Popen(
-                ["ollama", "serve"],
+                [Environment.get_ollama_executable() or "ollama", "serve"],
                 stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL
+                stderr=subprocess.DEVNULL,
+                **Environment.get_hidden_process_options()
             )
             # Wait for it in half-second steps, for as long as .env allows.
             timeout = Environment.get_int(EnvKey.OLLAMA_STARTUP_TIMEOUT, 30)

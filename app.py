@@ -4,7 +4,7 @@ from core.ollamaServerManager import OllamaServerManager
 from scripts.environment import Environment
 
 
-def main():
+def start_application():
     Environment.load()
     threading.Thread(target=OllamaServerManager().start_ollama_server, daemon=True).start()
     try:
@@ -12,5 +12,6 @@ def main():
     finally:
         Environment.save()
 
+
 if __name__ == "__main__":
-    main()
+    start_application()

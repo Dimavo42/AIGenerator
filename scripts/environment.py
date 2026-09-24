@@ -1,5 +1,9 @@
 import copy
 import json
+import os
+import platform
+import shutil
+import subprocess
 from pathlib import Path
 from constants import DEFAULT_DATA, DEFAULT_ENVIRONMENT
 
@@ -15,15 +19,110 @@ class Environment:
     constants.py. `load()` runs once before the GUI is built and `save()` once
     when the window closes - everything in between happens in memory, so no
     page ever waits on the disk.
+
+    It is also the only place that knows which operating system it runs on:
+    setup.py and the app ask it for paths and process options instead of
+    checking the platform themselves.
     """
+
+    WINDOWS = "Windows"
+    MACOS = "Darwin"
+    LINUX = "Linux"
 
     ROOT_PATH = Path(__file__).resolve().parent.parent
     ENVIRONMENT_PATH = ROOT_PATH / ".env"
     DATA_PATH = ROOT_PATH / "app_data.json"
+    APP_FILE = ROOT_PATH / "app.py"
+    REQUIREMENTS_FILE = ROOT_PATH / "requirements.txt"
+    VENV_DIR = ROOT_PATH / ".venv"
+    SYSTEM = platform.system()
 
     _environment_keys: dict[str, str] = {}
     _data: dict = {}
     _is_loaded = False
+
+    # =========================================================
+    # PLATFORM
+    # =========================================================
+
+    @classmethod
+    def get_platform(cls) -> str:
+        """"Windows", "Darwin" (macOS) or "Linux"."""
+        return cls.SYSTEM
+
+    @classmethod
+    def is_windows(cls) -> bool:
+        return cls.SYSTEM == cls.WINDOWS
+
+    @classmethod
+    def is_macos(cls) -> bool:
+        return cls.SYSTEM == cls.MACOS
+
+    @classmethod
+    def is_linux(cls) -> bool:
+        return cls.SYSTEM == cls.LINUX
+
+    @classmethod
+    def get_root(cls) -> Path:
+        """The project root, where all the files are."""
+        return cls.ROOT_PATH
+
+    @classmethod
+    def get_venv(cls) -> Path:
+        return cls.VENV_DIR
+
+    @classmethod
+    def get_venv_python(cls) -> Path:
+        """The venv's interpreter - Windows keeps it under Scripts, the rest under bin."""
+        if cls.is_windows():
+            return cls.VENV_DIR / "Scripts" / "python.exe"
+        return cls.VENV_DIR / "bin" / "python"
+
+    @classmethod
+    def get_gui_python(cls) -> Path:
+        """The interpreter the GUI runs under - pythonw on Windows, so no console opens."""
+        if cls.is_windows():
+            return cls.VENV_DIR / "Scripts" / "pythonw.exe"
+        return cls.get_venv_python()
+
+    @classmethod
+    def get_ollama_executable(cls) -> str | None:
+        """Ollama's path, or None when it is not installed.
+
+        PATH comes first, then the places the installers put it - a shell
+        opened before the install has an old PATH that does not include them.
+        """
+        found = shutil.which("ollama")
+        if found:
+            return found
+        if cls.is_windows():
+            candidates = [Path(os.environ.get("LOCALAPPDATA", "")) / "Programs" / "Ollama" / "ollama.exe"]
+        elif cls.is_macos():
+            candidates = [
+                Path("/Applications/Ollama.app/Contents/Resources/ollama"),
+                Path("/opt/homebrew/bin/ollama"),
+                Path("/usr/local/bin/ollama"),
+            ]
+        else:
+            candidates = [Path("/usr/local/bin/ollama"), Path("/usr/bin/ollama")]
+        for candidate in candidates:
+            if candidate.is_file():
+                return str(candidate)
+        return None
+
+    @classmethod
+    def get_hidden_process_options(cls) -> dict:
+        """Popen options for a background child that must not open a console window."""
+        if cls.is_windows():
+            return {"creationflags": subprocess.CREATE_NO_WINDOW}
+        return {}
+
+    @classmethod
+    def get_detached_process_options(cls) -> dict:
+        """Popen options for a child that outlives the terminal which started it."""
+        if cls.is_windows():
+            return {"creationflags": subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP}
+        return {"start_new_session": True}
 
     # =========================================================
     # LIFECYCLE
